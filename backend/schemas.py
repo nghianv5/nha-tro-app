@@ -1,0 +1,547 @@
+"""Pydantic schemas (create / update / response) cho từng thực thể.
+
+Tên trường dùng camelCase để khớp với JSON API và frontend.
+"""
+from datetime import date as DateType
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, ConfigDict
+
+
+class OutBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Nhà ----------
+class HouseCreate(BaseModel):
+    address: str
+    province: Optional[str] = ""
+    district: Optional[str] = ""
+    ward: Optional[str] = ""
+    floors: Optional[int] = 1
+    floorArea: Optional[int] = 0
+    bedrooms: Optional[int] = 0
+    bathrooms: Optional[int] = 0
+    type: Optional[str] = "own"
+    landlordId: Optional[str] = None
+
+
+class HouseUpdate(BaseModel):
+    address: Optional[str] = None
+    province: Optional[str] = None
+    district: Optional[str] = None
+    ward: Optional[str] = None
+    floors: Optional[int] = None
+    floorArea: Optional[int] = None
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[int] = None
+    type: Optional[str] = None
+    landlordId: Optional[str] = None
+
+
+class HouseOut(OutBase, HouseCreate):
+    id: str
+
+
+# ---------- Phòng ----------
+class RoomCreate(BaseModel):
+    houseId: str
+    name: str
+    floor: Optional[int] = 1
+    area: Optional[int] = 0
+    type: Optional[str] = "Khép kín"
+    toilet: Optional[str] = "Khép kín"
+    withOwner: Optional[bool] = False
+    price: Optional[int] = 0
+    minDeposit: Optional[int] = 0
+    maxPeople: Optional[int] = 0
+    payMonths: Optional[int] = 1
+    payFromDay: Optional[int] = 1
+    payToDay: Optional[int] = 3
+    amenities: Optional[List[str]] = []
+    services: Optional[dict] = {}
+
+
+class RoomUpdate(BaseModel):
+    houseId: Optional[str] = None
+    name: Optional[str] = None
+    floor: Optional[int] = None
+    area: Optional[int] = None
+    type: Optional[str] = None
+    toilet: Optional[str] = None
+    withOwner: Optional[bool] = None
+    price: Optional[int] = None
+    minDeposit: Optional[int] = None
+    maxPeople: Optional[int] = None
+    payMonths: Optional[int] = None
+    payFromDay: Optional[int] = None
+    payToDay: Optional[int] = None
+    amenities: Optional[List[str]] = None
+    services: Optional[dict] = None
+
+
+class RoomOut(OutBase, RoomCreate):
+    id: str
+
+
+# ---------- Khách hàng ----------
+class CustomerCreate(BaseModel):
+    name: str
+    dob: Optional[DateType] = None
+    phone: Optional[str] = ""
+    gender: Optional[str] = "Nam"
+    email: Optional[str] = ""
+    idCard: Optional[str] = ""
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    dob: Optional[DateType] = None
+    phone: Optional[str] = None
+    gender: Optional[str] = None
+    email: Optional[str] = None
+    idCard: Optional[str] = None
+
+
+class CustomerOut(OutBase, CustomerCreate):
+    id: str
+
+
+# ---------- Hợp đồng ----------
+class ContractCreate(BaseModel):
+    houseId: str
+    roomId: str
+    customerId: str
+    signDate: Optional[DateType] = None
+    startDate: Optional[DateType] = None
+    endDate: Optional[DateType] = None
+    price: Optional[int] = 0
+    deposit: Optional[int] = 0
+    people: Optional[int] = 1
+    payMonths: Optional[int] = 1
+    payFromDay: Optional[int] = 1
+    payToDay: Optional[int] = 3
+    services: Optional[dict] = {}
+    status: Optional[str] = "active"
+
+
+class ContractUpdate(BaseModel):
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    customerId: Optional[str] = None
+    signDate: Optional[DateType] = None
+    startDate: Optional[DateType] = None
+    endDate: Optional[DateType] = None
+    price: Optional[int] = None
+    deposit: Optional[int] = None
+    people: Optional[int] = None
+    payMonths: Optional[int] = None
+    payFromDay: Optional[int] = None
+    payToDay: Optional[int] = None
+    services: Optional[dict] = None
+    status: Optional[str] = None
+
+
+class ContractOut(OutBase, ContractCreate):
+    id: str
+
+
+# ---------- Chốt điện / nước ----------
+class MeterReadingCreate(BaseModel):
+    houseId: str
+    roomId: str
+    type: str = "dien"
+    prev: Optional[int] = 0
+    current: Optional[int] = 0
+    date: Optional[DateType] = None
+    note: Optional[str] = ""
+
+
+class MeterReadingUpdate(BaseModel):
+    prev: Optional[int] = None
+    current: Optional[int] = None
+    date: Optional[DateType] = None
+    note: Optional[str] = None
+
+
+class MeterReadingOut(OutBase, MeterReadingCreate):
+    id: str
+
+
+# ---------- Chốt điện nước chủ nhà ----------
+class LandlordMeterCreate(BaseModel):
+    houseId: str
+    date: Optional[DateType] = None
+    dien: Optional[int] = 0
+    nuoc: Optional[int] = 0
+    internet: Optional[int] = 0
+    vesinh: Optional[int] = 0
+
+
+class LandlordMeterUpdate(BaseModel):
+    date: Optional[DateType] = None
+    dien: Optional[int] = None
+    nuoc: Optional[int] = None
+    internet: Optional[int] = None
+    vesinh: Optional[int] = None
+
+
+class LandlordMeterOut(OutBase):
+    id: str
+    houseId: str
+    date: Optional[DateType] = None
+    dien: int = 0
+    nuoc: int = 0
+    internet: int = 0
+    vesinh: int = 0
+    total: int = 0
+
+
+# ---------- Hóa đơn ----------
+class InvoiceLineIn(BaseModel):
+    label: str = ""
+    unitPrice: Optional[int] = 0
+    unit: Optional[str] = ""
+    qty: Optional[int] = 0
+    prev: Optional[int] = None
+    current: Optional[int] = None
+    amount: Optional[int] = 0
+
+
+class InvoiceLineOut(OutBase, InvoiceLineIn):
+    id: str
+    invoiceId: str
+
+
+class InvoiceCreate(BaseModel):
+    kind: str = "monthly"
+    houseId: str
+    roomId: Optional[str] = None
+    month: Optional[str] = None
+    roomFee: Optional[int] = 0
+    total: Optional[int] = 0
+    status: Optional[str] = "unpaid"
+    createdDate: Optional[DateType] = None
+    reason: Optional[str] = None
+    lines: Optional[List[InvoiceLineIn]] = []
+
+
+class InvoiceUpdate(BaseModel):
+    kind: Optional[str] = None
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    month: Optional[str] = None
+    roomFee: Optional[int] = None
+    total: Optional[int] = None
+    status: Optional[str] = None
+    createdDate: Optional[DateType] = None
+    reason: Optional[str] = None
+    lines: Optional[List[InvoiceLineIn]] = None
+
+
+class InvoiceOut(OutBase):
+    id: str
+    kind: str
+    houseId: str
+    roomId: Optional[str] = None
+    month: Optional[str] = None
+    roomFee: int = 0
+    total: int = 0
+    status: str = "unpaid"
+    createdDate: Optional[DateType] = None
+    reason: Optional[str] = None
+    lines: List[InvoiceLineOut] = []
+
+
+class MonthlyInvoiceRequest(BaseModel):
+    """Tạo hóa đơn tháng từ hợp đồng đang hiệu lực của phòng."""
+    roomId: str
+    month: str  # 'YYYY-MM'
+    people: Optional[int] = None          # ghi đè số người cho dòng theo người
+    dienPrev: Optional[int] = None
+    dienCurr: Optional[int] = None
+    nuocPrev: Optional[int] = None
+    nuocCurr: Optional[int] = None
+
+
+class LiquidateRequest(BaseModel):
+    """Thanh lý hợp đồng: chỉ số cuối + ngày thanh lý + tùy chọn hoàn tiền phòng."""
+    liquidateDate: DateType
+    dienFinal: Optional[int] = None
+    nuocFinal: Optional[int] = None
+    refundRoomFee: bool = False           # tick hoàn tiền phòng thừa
+    prepaidRoomFee: int = 0               # số tiền phòng đã trả thừa
+    confirm: bool = False                 # true = chốt thanh lý thật
+
+
+# ---------- Xe ----------
+class VehicleCreate(BaseModel):
+    houseId: str
+    roomId: Optional[str] = None
+    type: str = "Xe máy"
+    plate: Optional[str] = ""
+    ownerName: Optional[str] = ""
+    fee: Optional[int] = 0
+    brand: Optional[str] = ""
+    color: Optional[str] = ""
+
+
+class VehicleUpdate(BaseModel):
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    type: Optional[str] = None
+    plate: Optional[str] = None
+    ownerName: Optional[str] = None
+    fee: Optional[int] = None
+    brand: Optional[str] = None
+    color: Optional[str] = None
+
+
+class VehicleOut(OutBase, VehicleCreate):
+    id: str
+
+
+# ---------- Tài sản ----------
+class AssetCreate(BaseModel):
+    houseId: str
+    roomId: Optional[str] = None
+    code: Optional[str] = ""
+    type: str = ""
+    status: Optional[str] = "Tốt"
+
+
+class AssetUpdate(BaseModel):
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    code: Optional[str] = None
+    type: Optional[str] = None
+    status: Optional[str] = None
+
+
+class AssetOut(OutBase, AssetCreate):
+    id: str
+
+
+# ---------- Đơn vị tính ----------
+class UnitCreate(BaseModel):
+    name: str
+
+
+class UnitUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class UnitOut(OutBase, UnitCreate):
+    id: str
+
+
+# ---------- Dịch vụ ----------
+class ServiceCreate(BaseModel):
+    name: str
+    price: Optional[int] = 0
+    unitId: Optional[str] = None
+
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    price: Optional[int] = None
+    unitId: Optional[str] = None
+
+
+class ServiceOut(OutBase, ServiceCreate):
+    id: str
+
+
+# ---------- Chi tiêu ----------
+class ExpenseCreate(BaseModel):
+    houseId: Optional[str] = None
+    title: str = ""
+    amount: Optional[int] = 0
+    date: Optional[DateType] = None
+    note: Optional[str] = ""
+
+
+class ExpenseUpdate(BaseModel):
+    houseId: Optional[str] = None
+    title: Optional[str] = None
+    amount: Optional[int] = None
+    date: Optional[DateType] = None
+    note: Optional[str] = None
+
+
+class ExpenseOut(OutBase, ExpenseCreate):
+    id: str
+
+
+# ---------- Sự cố ----------
+class IncidentCreate(BaseModel):
+    houseId: str
+    roomId: Optional[str] = None
+    type: str = "Khác"
+    phone: Optional[str] = ""
+    note: Optional[str] = ""
+    status: Optional[str] = "Chưa sửa"
+    creator: Optional[str] = ""
+    assignee: Optional[str] = ""
+    date: Optional[DateType] = None
+
+
+class IncidentUpdate(BaseModel):
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    type: Optional[str] = None
+    phone: Optional[str] = None
+    note: Optional[str] = None
+    status: Optional[str] = None
+    creator: Optional[str] = None
+    assignee: Optional[str] = None
+    date: Optional[DateType] = None
+
+
+class IncidentOut(OutBase, IncidentCreate):
+    id: str
+
+
+# ---------- Đặt cọc ----------
+class DepositCreate(BaseModel):
+    houseId: str
+    roomId: str
+    customerName: Optional[str] = ""
+    phone: Optional[str] = ""
+    amount: Optional[int] = 0
+    date: Optional[DateType] = None
+    note: Optional[str] = ""
+
+
+class DepositUpdate(BaseModel):
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    customerName: Optional[str] = None
+    phone: Optional[str] = None
+    amount: Optional[int] = None
+    date: Optional[DateType] = None
+    note: Optional[str] = None
+
+
+class DepositOut(OutBase, DepositCreate):
+    id: str
+
+
+# ---------- Chủ nhà ----------
+class LandlordCreate(BaseModel):
+    name: str
+    phone: Optional[str] = ""
+    address: Optional[str] = ""
+
+
+class LandlordUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+
+
+class LandlordOut(OutBase, LandlordCreate):
+    id: str
+
+
+# ---------- Hợp đồng chủ nhà ----------
+class LandlordContractCreate(BaseModel):
+    landlordId: str
+    houseId: str
+    rentPrice: Optional[int] = 0
+    startDate: Optional[DateType] = None
+    endDate: Optional[DateType] = None
+    payDay: Optional[int] = 5
+
+
+class LandlordContractUpdate(BaseModel):
+    landlordId: Optional[str] = None
+    houseId: Optional[str] = None
+    rentPrice: Optional[int] = None
+    startDate: Optional[DateType] = None
+    endDate: Optional[DateType] = None
+    payDay: Optional[int] = None
+
+
+class LandlordContractOut(OutBase, LandlordContractCreate):
+    id: str
+
+
+# ---------- Thanh toán tiền nhà ----------
+class HousePaymentCreate(BaseModel):
+    houseId: str
+    landlordId: Optional[str] = None
+    amount: Optional[int] = 0
+    date: Optional[DateType] = None
+    status: Optional[str] = "paid"
+
+
+class HousePaymentUpdate(BaseModel):
+    houseId: Optional[str] = None
+    landlordId: Optional[str] = None
+    amount: Optional[int] = None
+    date: Optional[DateType] = None
+    status: Optional[str] = None
+
+
+class HousePaymentOut(OutBase, HousePaymentCreate):
+    id: str
+
+
+# ---------- Tài khoản / phân quyền ----------
+class AccountCreate(BaseModel):
+    name: str
+    phone: Optional[str] = ""
+    role: Optional[str] = "staff"
+    password: Optional[str] = None  # chỉ nhận vào khi tạo, server băm rồi lưu password_hash
+    houseIds: Optional[List[str]] = []
+    modules: Optional[List[str]] = []
+
+
+class AccountUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[str] = None
+    houseIds: Optional[List[str]] = None
+    modules: Optional[List[str]] = None
+
+
+class AccountOut(OutBase):
+    """Schema trả về — TUYỆT ĐỐI không chứa password / password_hash."""
+    id: str
+    name: str
+    phone: Optional[str] = ""
+    role: Optional[str] = "staff"
+    houseIds: Optional[List[str]] = []
+    modules: Optional[List[str]] = []
+
+
+# ---------- Đăng nhập / xác thực ----------
+class LoginRequest(BaseModel):
+    phone: str
+    password: str
+
+
+class UserOut(OutBase):
+    """Thông tin người dùng trả về khi đăng nhập / GET /api/auth/me."""
+    id: str
+    name: str
+    phone: Optional[str] = ""
+    role: Optional[str] = "staff"
+    modules: Optional[List[str]] = []
+    houseIds: Optional[List[str]] = []
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str

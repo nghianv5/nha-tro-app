@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quản lý nhà trọ</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="phone">
+  <header id="appHeader">
+    <span class="back" id="btnBack" style="display:none" onclick="goBack()">&#8592;</span>
+    <span class="ttl" id="hdrTitle">Quản lý nhà trọ</span>
+  </header>
+  <main id="app"><div class="loading">Đang tải dữ liệu...</div></main>
+  <nav class="tabs-bar" id="tabBar">
+    <a data-tab="home" onclick="goTab('home')"><span class="ic">&#127968;</span>Home</a>
+    <a data-tab="rooms" onclick="goTab('rooms')"><span class="ic">&#128682;</span>Phòng</a>
+    <a data-tab="invoices" onclick="goTab('invoices')"><span class="ic">&#129534;</span>Hóa đơn</a>
+    <a data-tab="incidents" onclick="goTab('incidents')"><span class="ic">&#9888;&#65038;</span>Sự cố</a>
+    <a data-tab="menu" onclick="goTab('menu')"><span class="ic">&#9776;</span>Menu</a>
+  </nav>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
