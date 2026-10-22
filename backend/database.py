@@ -12,6 +12,15 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://nhatro:nhatro@localhost:5432/nhatro",
 )
+# Chuẩn hoá URL về driver psycopg2 (đã cài sẵn trong requirements) bất kể
+# nhà cung cấp cấp dạng nào — tránh lỗi "No module named 'psycopg'":
+#   postgres://...           -> postgresql+psycopg2://...
+#   postgresql://...         -> postgresql+psycopg2://...
+#   postgresql+psycopg://...-> postgresql+psycopg2://...
+for _prefix in ("postgresql+psycopg://", "postgresql://", "postgres://"):
+    if DATABASE_URL.startswith(_prefix):
+        DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len(_prefix):]
+        break
 
 _connect_args = {}
 if DATABASE_URL.startswith("sqlite"):

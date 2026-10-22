@@ -5,4 +5,5 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend ./backend
 COPY frontend ./frontend
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render cấp cổng qua biến môi trường PORT (mặc định 10000) — dùng shell form để mở rộng biến
+CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}

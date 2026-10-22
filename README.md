@@ -145,3 +145,22 @@ nha-tro-app/
 - Trạng thái phòng suy ra từ dữ liệu: có hợp đồng `active` → "Đã thuê"; có đặt cọc → "Đã cọc"; còn lại "Trống".
 - Hóa đơn tháng tự tính các dòng: Điện (chỉ số đầu–cuối × đơn giá), Nước (theo người hoặc theo số),
   Điện chung, Vệ sinh, Internet (theo người), Xe máy/Ô tô/Xe đạp (số lượng × phí).
+
+## Triển khai lên Render
+
+Project có sẵn `render.yaml` (Blueprint) và `Dockerfile` đã tương thích Render
+(app tự nghe cổng `$PORT` do Render cấp; `DATABASE_URL` dạng `postgres://` được tự chuẩn hoá).
+
+**Cách nhanh (Blueprint):**
+1. Đẩy code lên GitHub (repo mới).
+2. Render Dashboard → **New** → **Blueprint** → chọn repo → **Apply**.
+   Render tự tạo Web Service + PostgreSQL và gắn `DATABASE_URL`, `SECRET_KEY`.
+3. Chờ deploy xong → mở URL `https://<tên-app>.onrender.com` → đăng nhập
+   admin `0901234567` / `admin123` → đổi mật khẩu ngay.
+
+**Cách thủ công:** tạo PostgreSQL trước, rồi tạo Web Service (runtime Docker) trỏ vào repo,
+thêm env `DATABASE_URL` = Internal Database URL của Postgres vừa tạo, và `SECRET_KEY` = một chuỗi bí mật dài.
+
+**Lưu ý gói free:** Web Service free sẽ "ngủ" sau ~15 phút không có truy cập (mở lại chờ khoảng 1 phút);
+**PostgreSQL free hết hạn sau 30 ngày** (bị xóa dữ liệu) — khi dùng thật hãy nâng cấp
+Postgres lên gói Basic và Web Service lên Starter trong Dashboard.
