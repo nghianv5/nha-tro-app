@@ -279,6 +279,92 @@ function rbPickFiles(){
   chain.then(function(){ toast('Đã tải ảnh sổ đỏ lên'); }).catch(function(e){ errToast(e); rbRender(); });
 }
 function rbRemove(i){ (window._rbImages || []).splice(i, 1); rbRender(); }
+/* ----- Vị trí trên bản đồ của nhà (đợt 7): Leaflet + OpenStreetMap -----
+   Thư viện Leaflet đóng gói tĩnh trong frontend/leaflet/; chỉ các ô gạch
+   (tiles) nạp từ OpenStreetMap qua mạng. Bấm bản đồ / kéo ghim -> đồng bộ
+   2 ô tọa độ h_lat/h_lng; nhập tay tọa độ -> ghim nhảy tới. Mất mạng vẫn
+   dùng được form: tiles không nạp được thì bản đồ trống, nhập tay vẫn chạy. */
+var HOUSE_MAP_DEFAULT = [21.0285, 105.8542]; /* Hà Nội */
+function houseMapParse(v){
+  var x = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+  return isNaN(x) ? null : x;
+}
+function houseMapValid(lat, lng){
+  return lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+function houseMapCoords(){
+  var lat = houseMapParse(val('h_lat')), lng = houseMapParse(val('h_lng'));
+  return houseMapValid(lat, lng) ? { lat: lat, lng: lng } : null;
+}
+function houseMapSyncInputs(lat, lng){
+  var la = document.getElementById('h_lat'), lo = document.getElementById('h_lng');
+  if(la) la.value = Math.round(lat * 1e7) / 1e7;
+  if(lo) lo.value = Math.round(lng * 1e7) / 1e7;
+  var gg = document.getElementById('h_gg_link');
+  if(gg) gg.href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+}
+function houseMapSetPos(lat, lng, zoom){
+  houseMapSyncInputs(lat, lng);
+  var st = window._hmap; if(!st || typeof L === 'undefined') return;
+  if(!st.marker){
+    st.marker = L.marker([lat, lng], { draggable: true }).addTo(st.map);
+    st.marker.on('dragend', function(){
+      var p = st.marker.getLatLng();
+      houseMapSetPos(p.lat, p.lng);
+    });
+  } else st.marker.setLatLng([lat, lng]);
+  st.map.setView([lat, lng], zoom || st.map.getZoom());
+}
+function houseMapInit(hs){
+  var el = document.getElementById('h_map_el'); if(!el) return;
+  if(window._hmap && window._hmap.map){ try{ window._hmap.map.remove(); }catch(e){} window._hmap = null; }
+  if(typeof L === 'undefined'){
+    el.innerHTML = '<div class="img-ph" style="height:100%;display:flex;align-items:center;justify-content:center;padding:12px">🗺️ Không tải được thư viện bản đồ — vẫn nhập tọa độ thủ công ở 2 ô Vĩ độ/Kinh độ bên dưới.</div>';
+    return;
+  }
+  try{
+    L.Icon.Default.mergeOptions({
+      iconUrl: 'leaflet/images/marker-icon.png',
+      iconRetinaUrl: 'leaflet/images/marker-icon-2x.png',
+      shadowUrl: 'leaflet/images/marker-shadow.png'
+    });
+    var saved = (hs && houseMapValid(hs.latitude, hs.longitude)) ? { lat: hs.latitude, lng: hs.longitude } : null;
+    var map = L.map(el).setView(saved ? [saved.lat, saved.lng] : HOUSE_MAP_DEFAULT, saved ? 16 : 12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    window._hmap = { map: map, marker: null };
+    map.on('click', function(e){ houseMapSetPos(e.latlng.lat, e.latlng.lng); });
+    if(saved) houseMapSetPos(saved.lat, saved.lng, 16);
+    setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} }, 150);
+  }catch(e){
+    el.innerHTML = '<div class="img-ph" style="height:100%;display:flex;align-items:center;justify-content:center;padding:12px">🗺️ Không khởi tạo được bản đồ — vẫn nhập tọa độ thủ công ở 2 ô Vĩ độ/Kinh độ bên dưới.</div>';
+  }
+}
+function houseMapCoordsChanged(){
+  var c = houseMapCoords(); if(!c) return;
+  houseMapSetPos(c.lat, c.lng);
+}
+function houseMapGeocode(q){
+  if(!q){ toast('Hãy nhập địa chỉ cần tìm'); return; }
+  toast('Đang tìm vị trí trên bản đồ...');
+  fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=vn&accept-language=vi&q=' + encodeURIComponent(q),
+    { headers: { 'Accept': 'application/json' } })
+    .then(function(r){ return r.json(); })
+    .then(function(rs){
+      if(rs && rs.length){
+        houseMapSetPos(parseFloat(rs[0].lat), parseFloat(rs[0].lon), 16);
+        toast('Đã tìm thấy vị trí');
+      } else toast('Không tìm thấy địa chỉ này trên bản đồ');
+    })
+    .catch(function(){ toast('Không tìm được — hãy kiểm tra kết nối mạng'); });
+}
+function houseMapSearch(){ houseMapGeocode(val('h_geo_q')); }
+function houseMapFromAddress(){
+  var parts = [val('h_address'), val('h_ward'), val('h_district'), val('h_province')].filter(function(x){ return !!x; });
+  if(!parts.length){ toast('Hãy nhập Địa chỉ + Phường/Quận/Tỉnh trong form trước'); return; }
+  houseMapGeocode(parts.join(', '));
+}
 /* Chọn khách có sẵn -> tự điền hồ sơ vào các ô prefix (dùng cho form cọc) */
 function custPickInto(prefix, selId){
   var c = byId(db.customers, val(selId));
@@ -568,7 +654,19 @@ function viewHouseForm(p){
     fld('Quận / Huyện', locSelectHtml('h', 'district'), true) +
     fld('Phường / Xã', locSelectHtml('h', 'ward'), true) +
     '</div>' +
-    '<label class="fl">Vị trí trên bản đồ</label><div class="map-ph">📍</div>' +
+    /* Đợt 7: bản đồ thật Leaflet + OpenStreetMap — bấm/kéo ghim, 2 ô tọa độ
+       đồng bộ 2 chiều, tìm địa chỉ qua Nominatim; init ở houseMapInit() */
+    '<label class="fl">Vị trí trên bản đồ</label>' +
+    '<div class="map-tools">' +
+    '<input id="h_geo_q" type="text" placeholder="Tìm địa chỉ trên bản đồ (vd: 372 Xã Đàn, Đống Đa, Hà Nội)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();houseMapSearch();}">' +
+    '<button type="button" class="btn sm" onclick="houseMapSearch()">🔍 Tìm</button>' +
+    '<button type="button" class="btn sm gray" onclick="houseMapFromAddress()">Tìm theo địa chỉ đã nhập</button></div>' +
+    '<div id="h_map_el" class="map-real"></div>' +
+    '<div class="fgrid">' +
+    fld('Vĩ độ (latitude)', inp('h_lat', (hs && hs.latitude != null) ? hs.latitude : '', 'text', 'inputmode="decimal" onchange="houseMapCoordsChanged()"')) +
+    fld('Kinh độ (longitude)', inp('h_lng', (hs && hs.longitude != null) ? hs.longitude : '', 'text', 'inputmode="decimal" onchange="houseMapCoordsChanged()"')) +
+    '</div>' +
+    (hs ? '<div class="map-gg"><a id="h_gg_link" target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + ((hs.latitude != null && hs.longitude != null) ? (hs.latitude + ',' + hs.longitude) : 'Hà Nội') + '">Mở Google Maps ↗</a></div>' : '') +
     fld('Ghi chú vị trí trên bản đồ', inp('h_map', mapNote)) +
     /* Đợt 6 (mục 5): Ảnh sổ đỏ — tải nhiều ảnh thật qua /api/upload */
     '<div style="margin-top:6px"><label class="fl">Ảnh sổ đỏ</label>' +
@@ -634,6 +732,8 @@ function viewHouseForm(p){
   /* Đợt 6: nạp select hành chính xếp tầng (chế độ sửa chọn sẵn theo tên đã lưu)
      + danh sách ảnh sổ đỏ đã lưu của nhà */
   locInit('h', { province: hs ? hs.province : 'Hà Nội', district: hs ? hs.district : '', ward: hs ? hs.ward : '' });
+  /* Đợt 7: khởi tạo bản đồ thật (ghim tại tọa độ đã lưu, zoom 16; chưa có thì mở Hà Nội) */
+  houseMapInit(hs);
   window._rbImages = (hs && Array.isArray(hs.redBookImages)) ? hs.redBookImages.slice() : [];
   rbRender();
   /* Chế độ sửa: nạp sẵn các tài sản chủ nhà hiện có của nhà thành từng dòng */
@@ -669,6 +769,7 @@ function saveHouse(id){
   });
   var oldHouse = id ? byId(db.houses, id) : null;
   var proceed = function(landlordId){
+    var coords = houseMapCoords();
     var data = { address: val('h_address'), name: val('h_name'), province: val('h_province'),
       district: val('h_district'), ward: val('h_ward'), floors: num(val('h_floors')),
       floorArea: num(val('h_area')), bedrooms: num(val('h_bedrooms')), bathrooms: num(val('h_bathrooms')),
@@ -676,6 +777,9 @@ function saveHouse(id){
       /* Đợt 5: "Hình thức cho thuê" đã bỏ khỏi form — giữ nguyên giá trị cũ trong DB */
       rentalMode: oldHouse ? (oldHouse.rentalMode || 'Bao phòng') : 'Bao phòng',
       description: fullDesc, landlordId: landlordId || null,
+      /* Đợt 7: tọa độ bản đồ từ 2 ô Vĩ độ/Kinh độ (không hợp lệ -> null) */
+      latitude: coords ? coords.lat : null,
+      longitude: coords ? coords.lng : null,
       /* Đợt 6 (mục 5): danh sách URL ảnh sổ đỏ */
       redBookImages: (window._rbImages || []).slice() };
     var afterHouse = function(houseId){

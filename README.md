@@ -412,6 +412,41 @@ app tự bổ sung qua `ensure_columns()`; harness jsdom **24/24 assert pass** (
 tầng chọn sẵn đúng tên đã lưu + giữ tên phường cũ, đổi tỉnh/quận nạp lại đúng, lưới ảnh
 sổ đỏ, ảnh CMND, payload lưu nhà/chủ nhà/tài sản).
 
+## Đợt 7 — "Vị trí trên bản đồ" là bản đồ thật để chọn vị trí (form Thêm/Sửa nhà)
+
+Khung placeholder bản đồ (đợt 5) được thay bằng **bản đồ tương tác thật**:
+
+1. **Thư viện + nền bản đồ:** Leaflet **1.9.4** (JS + CSS + ảnh marker mặc định) đóng gói
+   tĩnh tại `frontend/leaflet/` — không phụ thuộc CDN lúc chạy; chỉ các ô gạch bản đồ
+   (tiles) nạp từ **OpenStreetMap** (`tile.openstreetmap.org`) qua mạng như mọi bản đồ
+   web. Miễn phí, không cần API key.
+2. **Tương tác:** bấm vào bản đồ để đặt/di chuyển ghim, **kéo thả ghim**; 2 ô **Vĩ độ
+   (latitude) / Kinh độ (longitude)** đồng bộ hai chiều với ghim (ghim đổi → ô cập nhật;
+   nhập tọa độ tay → ghim nhảy tới). **Ô tìm kiếm địa chỉ** dùng Nominatim của
+   OpenStreetMap (phía trình duyệt, không cần key) + nút **"Tìm theo địa chỉ đã nhập"**
+   lấy Địa chỉ + Phường/Quận/Tỉnh đang nhập trong form để định vị nhanh. Ô ghi chú vị
+   trí giữ nguyên như cũ. Chế độ sửa có thêm link **"Mở Google Maps"** theo tọa độ đã lưu.
+3. **Lưu tọa độ theo nhà:** 2 cột số thập phân `latitude` / `longitude` (nullable) trong
+   bảng `houses` — DB cũ tự bổ sung qua `ensure_columns()`, schema
+   Create/Update/Out đầy đủ. Mở Sửa nhà: bản đồ hiện đúng ghim đã lưu ở zoom 16; nhà
+   chưa có tọa độ mở ở Hà Nội (zoom 12). Chiều cao bản đồ 320px (260px trên mobile).
+4. **Mất mạng vẫn dùng được form:** nếu không nạp được thư viện/tiles bản đồ, khung bản
+   đồ hiện thông báo dự phòng, không lỗi JS — 2 ô tọa độ vẫn nhập tay và lưu bình thường.
+
+**Kiểm chứng đợt 7:** pytest **59/59 pass** (55 cũ + 4 test mới tại `tests/test_map.py`:
+tạo/sửa/xóa tọa độ nhà khứ hồi qua API, nhà không tọa độ → `null`, mô phỏng DB cũ thiếu
+2 cột → `ensure_columns()` bổ sung không mất dữ liệu, các file Leaflet phục vụ 200);
+`node --check frontend/app.js` OK; server uvicorn thật: login → tạo nhà có tọa độ → GET
+trả đúng → PUT đổi tọa độ đúng, `/leaflet/leaflet.js|css` + ảnh marker **200** đúng
+content-type; harness jsdom **25/25 assert pass** (ghim đúng vị trí đã lưu + zoom 16,
+bấm bản đồ/kéo ghim/nhập tay đồng bộ 2 chiều với ô tọa độ, payload POST/PUT chứa
+latitude/longitude, và kịch bản không có Leaflet: form vẫn render + lưu được tọa độ
+nhập tay).
+
+**Giới hạn:** tiles bản đồ và tìm kiếm địa chỉ cần kết nối mạng; độ chính xác của kết
+quả tìm địa chỉ phụ thuộc dữ liệu OpenStreetMap (khu vực ít dữ liệu có thể không tìm
+thấy — khi đó bấm trực tiếp lên bản đồ hoặc nhập tọa độ tay).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

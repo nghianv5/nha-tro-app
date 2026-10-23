@@ -6,8 +6,8 @@ dùng snake_case. Các trường danh sách (tiện ích, dịch vụ HĐ, quy�
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (Boolean, Column, Date, DateTime, ForeignKey, Integer,
-                        String, Text)
+from sqlalchemy import (Boolean, Column, Date, DateTime, Float, ForeignKey,
+                        Integer, String, Text)
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import relationship
 
@@ -38,6 +38,8 @@ class House(TimestampMixin, Base):
     businessType = Column("business_type", String, default="")  # Loại nhà trọ: Chung cư mini|Nhà nguyên căn|Homestay|Phòng đơn|Phòng trọ
     rentalMode = Column("rental_mode", String, default="Bao phòng")  # Hình thức cho thuê: Bao phòng | Bao người (SPEC-WEB-2 A)
     description = Column(Text, default="")
+    latitude = Column("latitude", Float, nullable=True)  # Vĩ độ vị trí trên bản đồ (đợt 7)
+    longitude = Column("longitude", Float, nullable=True)  # Kinh độ vị trí trên bản đồ (đợt 7)
     redBookImages = Column("red_book_images", JSON, default=list)  # Danh sách URL ảnh sổ đỏ tải lên (đợt 6, mục 5)
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=True)
 

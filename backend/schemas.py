@@ -27,6 +27,8 @@ class HouseCreate(BaseModel):
     businessType: Optional[str] = ""
     rentalMode: Optional[str] = "Bao phòng"
     description: Optional[str] = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     landlordId: Optional[str] = None
     redBookImages: Optional[List[str]] = []
 
@@ -45,6 +47,8 @@ class HouseUpdate(BaseModel):
     businessType: Optional[str] = None
     rentalMode: Optional[str] = None
     description: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     landlordId: Optional[str] = None
     redBookImages: Optional[List[str]] = None
 
