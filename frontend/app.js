@@ -154,6 +154,131 @@ function cmndPhotosHtml(){
 function avatarPhHtml(){
   return '<div><label class="fl">Ảnh đại diện</label><div class="avatar-ph">👤</div></div>';
 }
+/* ================================================================
+   ĐỢT 6 — 1) Địa chỉ hành chính VN dạng select xếp tầng (dữ liệu tĩnh
+   đóng gói trong vn-admin.js: window.VN_ADMIN, không gọi API ngoài);
+   2) Tải ảnh thật lên server qua POST /api/upload (JWT).
+   ================================================================ */
+function vnAdminData(){ return window.VN_ADMIN || []; }
+function locProvinces(){ return vnAdminData().map(function(p){ return p[0]; }); }
+function locDistricts(province){
+  var p = vnAdminData().filter(function(x){ return x[0] === province; })[0];
+  return p ? p[1].map(function(d){ return d[0]; }) : [];
+}
+function locWards(province, district){
+  var p = vnAdminData().filter(function(x){ return x[0] === province; })[0];
+  if(!p) return [];
+  var d = p[1].filter(function(x){ return x[0] === district; })[0];
+  return d ? d[1].slice() : [];
+}
+function locFill(id, names, current){
+  var el = document.getElementById(id); if(!el) return;
+  var list = names.slice();
+  /* Giá trị đã lưu không có trong dữ liệu chuẩn (vd tên phường cũ trước khi
+     sáp nhập hành chính) vẫn được giữ làm 1 lựa chọn để không mất dữ liệu */
+  if(current && list.indexOf(current) < 0) list.unshift(current);
+  el.innerHTML = '<option value="">-- Chọn --</option>' + list.map(function(n){
+    return '<option value="'+esc(n)+'"'+(n === current ? ' selected' : '')+'>'+esc(n)+'</option>';
+  }).join('');
+}
+function locInit(prefix, vals){
+  vals = vals || {};
+  locFill(prefix + '_province', locProvinces(), vals.province || '');
+  locFill(prefix + '_district', vals.province ? locDistricts(vals.province) : [], vals.district || '');
+  locFill(prefix + '_ward', (vals.province && vals.district) ? locWards(vals.province, vals.district) : [], vals.ward || '');
+}
+function locProvinceChanged(prefix){
+  var pv = val(prefix + '_province');
+  locFill(prefix + '_district', locDistricts(pv), '');
+  locFill(prefix + '_ward', [], '');
+}
+function locDistrictChanged(prefix){
+  locFill(prefix + '_ward', locWards(val(prefix + '_province'), val(prefix + '_district')), '');
+}
+function locSelectHtml(prefix, kind){
+  var fn = kind === 'province' ? 'locProvinceChanged' : (kind === 'district' ? 'locDistrictChanged' : '');
+  return '<select id="'+prefix+'_'+kind+'"'+(fn ? ' onchange="'+fn+'(\''+prefix+'\')"' : '')+'></select>';
+}
+/* ----- Upload ảnh lên server (multipart + JWT) -> Promise<url> ----- */
+function uploadImageFile(file){
+  if(file.size > 5 * 1024 * 1024) return Promise.reject(new Error('Ảnh "'+file.name+'" vượt quá 5MB'));
+  var fd = new FormData(); fd.append('file', file);
+  var headers = {}; var tk = getToken(); if(tk) headers['Authorization'] = 'Bearer ' + tk;
+  return fetch('/api/upload', { method: 'POST', headers: headers, body: fd }).then(function(res){
+    return res.text().then(function(txt){
+      var data = null; try{ data = txt ? JSON.parse(txt) : null; }catch(e){}
+      if(!res.ok) throw new Error((data && data.detail) || ('Lỗi ' + res.status));
+      return data.url;
+    });
+  });
+}
+/* Bộ chọn 1 ảnh dùng chung: hidden input id=base giữ URL; các phần tử phụ
+   có id base+'_thumb' / base+'_ph' / base+'_file' / base+'_del' */
+function imgPickInner(base, url, thumbCls){
+  return '<input type="hidden" id="'+base+'" value="'+esc(url || '')+'">' +
+    '<img id="'+base+'_thumb" class="'+(thumbCls || 'asset-thumb')+'" src="'+esc(url || '')+'" alt="Ảnh đã tải lên"'+(url ? '' : ' style="display:none"')+'>' +
+    '<div class="img-ph" id="'+base+'_ph" style="padding:8px 4px"'+(url ? ' style="display:none"' : '')+'>🖼️<br>Chưa có ảnh</div>' +
+    '<input type="file" id="'+base+'_file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="pickImageFile(\''+base+'\')">' +
+    '<div class="btnrow" style="margin:6px 0 0">' +
+    '<button type="button" class="btn sm gray" onclick="document.getElementById(\''+base+'_file\').click()">📷 Chọn ảnh</button>' +
+    '<button type="button" class="btn sm red" id="'+base+'_del" onclick="clearPickedImage(\''+base+'\')"'+(url ? '' : ' style="display:none"')+'>Bỏ ảnh</button></div>';
+}
+function imagePickerHtml(base, url, label, thumbCls){
+  return '<div><label class="fl">'+esc(label || 'Ảnh')+'</label>' + imgPickInner(base, url, thumbCls) + '</div>';
+}
+function setPickedImage(base, url){
+  var hidden = document.getElementById(base); if(hidden) hidden.value = url || '';
+  var img = document.getElementById(base + '_thumb');
+  if(img){ img.src = url || ''; img.style.display = url ? '' : 'none'; }
+  var ph = document.getElementById(base + '_ph'); if(ph) ph.style.display = url ? 'none' : '';
+  var del = document.getElementById(base + '_del'); if(del) del.style.display = url ? '' : 'none';
+}
+function clearPickedImage(base){ setPickedImage(base, ''); }
+function pickImageFile(base){
+  var input = document.getElementById(base + '_file');
+  var f = input && input.files && input.files[0];
+  if(!f) return;
+  input.value = '';
+  toast('Đang tải ảnh lên...');
+  uploadImageFile(f).then(function(url){ setPickedImage(base, url); toast('Đã tải ảnh lên'); }).catch(errToast);
+}
+/* 2 ô tải ảnh CMND/CCCD thật (mặt trước / mặt sau) cho hồ sơ CHỦ NHÀ —
+   prefix 'l' ở form nhà, 'll' ở form chủ nhà (Quản lý) */
+function landlordCmndHtml(l, prefix){
+  var one = function(base, url, sub){
+    return '<div style="flex:1;min-width:140px"><div style="font-size:12.5px;color:#616161;margin-bottom:4px">'+sub+'</div>' +
+      imgPickInner(base, url, 'doc-thumb') + '</div>';
+  };
+  return '<div><label class="fl">Ảnh CMND/CCCD (tải lên thật)</label><div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    one(prefix + '_cmnd_front', l ? (l.idCardImage1 || '') : '', 'Mặt trước') +
+    one(prefix + '_cmnd_back', l ? (l.idCardImage2 || '') : '', 'Mặt sau') +
+    '</div></div>';
+}
+/* ----- Ảnh sổ đỏ của nhà: nhiều ảnh, lưới thumbnail, xóa từng ảnh ----- */
+function rbRender(){
+  var grid = document.getElementById('rb_grid'); if(!grid) return;
+  var list = window._rbImages || [];
+  grid.innerHTML = list.length ? list.map(function(u, i){
+    return '<div class="rb-cell"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh sổ đỏ">' +
+      '<button type="button" class="rb-x" title="Xóa ảnh này" onclick="rbRemove('+i+')">✕</button></div>';
+  }).join('') : '<div class="img-ph" style="padding:10px 6px;flex:1">📕<br>Chưa có ảnh sổ đỏ</div>';
+}
+function rbPickFiles(){
+  var input = document.getElementById('rb_file');
+  var files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+  if(input) input.value = '';
+  if(!files.length) return;
+  window._rbImages = window._rbImages || [];
+  toast('Đang tải ' + files.length + ' ảnh sổ đỏ lên...');
+  var chain = Promise.resolve();
+  files.forEach(function(f){
+    chain = chain.then(function(){ return uploadImageFile(f); }).then(function(url){
+      window._rbImages.push(url); rbRender();
+    });
+  });
+  chain.then(function(){ toast('Đã tải ảnh sổ đỏ lên'); }).catch(function(e){ errToast(e); rbRender(); });
+}
+function rbRemove(i){ (window._rbImages || []).splice(i, 1); rbRender(); }
 /* Chọn khách có sẵn -> tự điền hồ sơ vào các ô prefix (dùng cho form cọc) */
 function custPickInto(prefix, selId){
   var c = byId(db.customers, val(selId));
@@ -401,8 +526,11 @@ function houseLandlordPick(){
   Object.keys(map).forEach(function(k){
     var e = document.getElementById(map[k]); if(e) e.value = l ? (l[k] || '') : '';
   });
+  /* Đợt 6 (mục 4): đồng bộ cả 2 ảnh CMND của chủ nhà được chọn */
+  setPickedImage('l_cmnd_front', l ? (l.idCardImage1 || '') : '');
+  setPickedImage('l_cmnd_back', l ? (l.idCardImage2 || '') : '');
 }
-function addHouseAssetRow(type, status, note, assetId){
+function addHouseAssetRow(type, status, note, assetId, imageUrl){
   var i = window._haCount = (window._haCount || 0) + 1;
   var wrap = document.getElementById('ha_rows'); if(!wrap) return;
   var types = HOUSE_ASSET_TYPES.slice();
@@ -414,7 +542,8 @@ function addHouseAssetRow(type, status, note, assetId){
   div.innerHTML = (existed ? '<div><label class="fl">Mã tài sản</label><div style="padding:9px 2px;font-weight:600">'+esc(existed.code || '')+'</div></div>' : '') +
     '<div>'+fld('Loại tài sản', sel('ha_type_'+i, types, type||'Tivi'))+'</div>' +
     '<div>'+fld('Trạng thái', sel('ha_status_'+i, ASSET_STATUSES, status||'Tốt'))+'</div>' +
-    '<div><label class="fl">Ảnh tài sản</label><div class="img-ph" style="padding:8px 4px">🖼️<br>Ảnh (minh họa)</div></div>' +
+    /* Đợt 6 (mục 2): ảnh tài sản tải lên thật, xem trước ngay trong dòng */
+    imagePickerHtml('ha_img_'+i, imageUrl || (existed ? (existed.imageUrl || '') : ''), 'Ảnh tài sản') +
     '<div>'+fld('Note', inp('ha_note_'+i, note||''))+'</div>' +
     '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm red" onclick="document.getElementById(\'ha_row_'+i+'\').remove()">Xóa dòng</button></div>';
   wrap.appendChild(div);
@@ -434,12 +563,18 @@ function viewHouseForm(p){
     /* --- Phần 1: Thông Tin Nhà --- */
     '<div class="form-sec"><h3 class="sec">Thông Tin Nhà</h3><div class="fgrid">' +
     fld('Địa chỉ', inp('h_address', hs?hs.address:''), true) +
-    fld('Tỉnh / TP', inp('h_province', hs?hs.province:'Hà Nội'), true) +
-    fld('Quận / Huyện', inp('h_district', hs?hs.district:''), true) +
-    fld('Phường / Xã', inp('h_ward', hs?hs.ward:''), true) +
+    /* Đợt 6 (mục 1): Tỉnh/Quận/Phường là select xếp tầng theo dữ liệu hành chính VN (vn-admin.js) */
+    fld('Tỉnh / TP', locSelectHtml('h', 'province'), true) +
+    fld('Quận / Huyện', locSelectHtml('h', 'district'), true) +
+    fld('Phường / Xã', locSelectHtml('h', 'ward'), true) +
     '</div>' +
     '<label class="fl">Vị trí trên bản đồ</label><div class="map-ph">📍</div>' +
     fld('Ghi chú vị trí trên bản đồ', inp('h_map', mapNote)) +
+    /* Đợt 6 (mục 5): Ảnh sổ đỏ — tải nhiều ảnh thật qua /api/upload */
+    '<div style="margin-top:6px"><label class="fl">Ảnh sổ đỏ</label>' +
+    '<div id="rb_grid" class="rb-grid"></div>' +
+    '<input type="file" id="rb_file" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none" onchange="rbPickFiles()">' +
+    '<div class="btnrow" style="margin:6px 0 0"><button type="button" class="btn sm gray" onclick="document.getElementById(\'rb_file\').click()">📷 Thêm ảnh sổ đỏ</button></div></div>' +
     '<div class="fgrid">' +
     fld('Tên nhà', inp('h_name', hs?hs.name:''), true) +
     fld('Diện tích sàn (m2)', inp('h_area', hs?hs.floorArea:0, 'number'), true) +
@@ -465,7 +600,8 @@ function viewHouseForm(p){
     fld('Tình trạng hôn nhân', inp('l_marital', ll?ll.maritalStatus:'')) +
     fld('Mail', inp('l_email', ll?ll.email:'')) +
     fld('CMND', inp('l_idcard', ll?ll.idCard:''), true) +
-    cmndPhotosHtml() +
+    /* Đợt 6 (mục 4): ảnh CMND chủ nhà tải lên thật (mặt trước / mặt sau) */
+    landlordCmndHtml(ll, 'l') +
     '</div></div>' +
     /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
     '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3><div class="fgrid">' +
@@ -495,27 +631,41 @@ function viewHouseForm(p){
     '<button class="btn gray" type="button" onclick="go(\'houses\')">Quay lại</button></div></form>';
   setContent(h);
   window._haCount = 0;
+  /* Đợt 6: nạp select hành chính xếp tầng (chế độ sửa chọn sẵn theo tên đã lưu)
+     + danh sách ảnh sổ đỏ đã lưu của nhà */
+  locInit('h', { province: hs ? hs.province : 'Hà Nội', district: hs ? hs.district : '', ward: hs ? hs.ward : '' });
+  window._rbImages = (hs && Array.isArray(hs.redBookImages)) ? hs.redBookImages.slice() : [];
+  rbRender();
   /* Chế độ sửa: nạp sẵn các tài sản chủ nhà hiện có của nhà thành từng dòng */
-  llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id); });
+  llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || ''); });
 }
 function saveHouse(id){
   var landlordSel = val('h_landlordSel');
+  /* Đợt 6 (mục 4): hồ sơ chủ nhà trong form (kèm 2 ảnh CMND đã tải lên) —
+     chủ nhà có sẵn thì CẬP NHẬT lại hồ sơ (đúng cam kết "chọn là tự điền,
+     sửa được" của nhãn select), chưa chọn thì tạo mới khi có họ tên */
   var landlordData = null;
-  if(!landlordSel && val('l_name')){
+  if(val('l_name')){
     landlordData = { name: val('l_name'), phone: val('l_phone'), address: val('l_perm'),
       dob: val('l_dob') || null, gender: val('l_gender'), job: val('l_job'),
       maritalStatus: val('l_marital'), email: val('l_email'), idCard: val('l_idcard'),
-      permanentAddress: val('l_perm') };
+      permanentAddress: val('l_perm'),
+      idCardImage1: val('l_cmnd_front'), idCardImage2: val('l_cmnd_back') };
   }
   var mapNote = val('h_map'), desc = val('h_desc');
   var fullDesc = (mapNote ? 'Vị trí bản đồ: ' + mapNote + '\n' : '') + desc;
   // Đọc các dòng tài sản chủ nhà trong form (phần Tài sản): dòng có data-aid
-  // là tài sản sẵn có (cập nhật), dòng không có là tài sản thêm mới (tạo mới)
+  // là tài sản sẵn có (cập nhật), dòng không có là tài sản thêm mới (tạo mới).
+  // Đợt 6: đọc theo id phần tử (ha_type_N/ha_status_N/ha_note_N/ha_img_N)
+  // vì dòng nay có thêm input file + hidden của bộ chọn ảnh.
   var assetRows = [];
   document.querySelectorAll('#ha_rows > div').forEach(function(row){
-    var inputs = row.querySelectorAll('input,select,textarea');
-    if(inputs.length >= 3 && inputs[0].value.trim())
-      assetRows.push({ aid: row.getAttribute('data-aid') || '', type: inputs[0].value.trim(), status: inputs[1].value, note: inputs[2].value.trim() });
+    var m = (row.id || '').match(/^ha_row_(\d+)$/); if(!m) return;
+    var i = m[1], tEl = document.getElementById('ha_type_' + i);
+    if(tEl && tEl.value.trim())
+      assetRows.push({ aid: row.getAttribute('data-aid') || '', type: tEl.value.trim(),
+        status: val('ha_status_' + i) || 'Tốt', note: val('ha_note_' + i),
+        imageUrl: val('ha_img_' + i) });
   });
   var oldHouse = id ? byId(db.houses, id) : null;
   var proceed = function(landlordId){
@@ -525,7 +675,9 @@ function saveHouse(id){
       type: val('h_type'), businessType: val('h_business'),
       /* Đợt 5: "Hình thức cho thuê" đã bỏ khỏi form — giữ nguyên giá trị cũ trong DB */
       rentalMode: oldHouse ? (oldHouse.rentalMode || 'Bao phòng') : 'Bao phòng',
-      description: fullDesc, landlordId: landlordId || null };
+      description: fullDesc, landlordId: landlordId || null,
+      /* Đợt 6 (mục 5): danh sách URL ảnh sổ đỏ */
+      redBookImages: (window._rbImages || []).slice() };
     var afterHouse = function(houseId){
       var jobs = [];
       // Hợp đồng chủ nhà (chỉ khi nhà thuê + có tiền thuê)
@@ -552,9 +704,9 @@ function saveHouse(id){
       });
       // Tài sản chủ nhà trong form: dòng sẵn có -> cập nhật, dòng mới -> tạo
       assetRows.forEach(function(r){
-        if(r.aid) jobs.push(updateRec('assets', r.aid, { type: r.type, status: r.status, note: r.note }));
+        if(r.aid) jobs.push(updateRec('assets', r.aid, { type: r.type, status: r.status, note: r.note, imageUrl: r.imageUrl }));
         else jobs.push(createRec('assets', { houseId: houseId, roomId: null, ownerType: 'landlord',
-          type: r.type, status: r.status, note: r.note }));
+          type: r.type, status: r.status, note: r.note, imageUrl: r.imageUrl }));
       });
       Promise.all(jobs).then(function(){
         toast('Đã lưu nhà' + (jobs.length ? ' + hợp đồng/tài khoản điện nước/tài sản kèm theo' : ''));
@@ -564,7 +716,9 @@ function saveHouse(id){
     if(id) updateRec('houses', id, data).then(function(){ afterHouse(id); }).catch(errToast);
     else createRec('houses', data).then(function(hs){ afterHouse(hs.id); }).catch(errToast);
   };
-  if(landlordData) createRec('landlords', landlordData).then(function(l){ proceed(l.id); }).catch(errToast);
+  if(landlordSel && landlordData)
+    updateRec('landlords', landlordSel, landlordData).then(function(){ proceed(landlordSel); }).catch(errToast);
+  else if(landlordData) createRec('landlords', landlordData).then(function(l){ proceed(l.id); }).catch(errToast);
   else proceed(landlordSel || null);
 }
 
@@ -1466,7 +1620,8 @@ function viewLandlordForm(p){
     fld('SDT', inp('ll_phone', l?l.phone:''), true) + fld('Giới tính', sel('ll_gender', ['Nam','Nữ','Khác'], l?l.gender:'Nam')) +
     fld('Nghề nghiệp', inp('ll_job', l?l.job:'')) + fld('Tình trạng hôn nhân', inp('ll_marital', l?l.maritalStatus:'')) +
     fld('Mail', inp('ll_email', l?l.email:'')) + fld('CMND/CCCD', inp('ll_idcard', l?l.idCard:'')) +
-    cmndPhotosHtml() +
+    /* Đợt 6 (mục 4): ảnh CMND chủ nhà tải lên thật — cùng thành phần với form nhà */
+    landlordCmndHtml(l, 'll') +
     fld('Địa chỉ thường trú', inp('ll_perm', l?l.permanentAddress:'')) + fld('Địa chỉ', inp('ll_addr', l?l.address:'')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">'+(l ? 'Lưu thay đổi' : 'Thêm chủ nhà')+'</button>' +
     '<button class="btn gray" type="button" onclick="contractState.sub=\'landlord\';go(\'contracts\')">Quay lại</button></div></form>';
@@ -1476,7 +1631,8 @@ function saveLandlord(id){
   var data = { name: val('ll_name'), phone: val('ll_phone'), address: val('ll_addr'),
     dob: val('ll_dob') || null, gender: val('ll_gender'), job: val('ll_job'),
     maritalStatus: val('ll_marital'), email: val('ll_email'), idCard: val('ll_idcard'),
-    permanentAddress: val('ll_perm') };
+    permanentAddress: val('ll_perm'),
+    idCardImage1: val('ll_cmnd_front'), idCardImage2: val('ll_cmnd_back') };
   var pr = id ? updateRec('landlords', id, data) : createRec('landlords', data);
   pr.then(function(){ toast('Đã lưu chủ nhà'); contractState.sub='landlord'; go('contracts'); }).catch(errToast);
 }
@@ -2464,18 +2620,16 @@ function locOptions(sourceArr, current){
 }
 function viewStaffForm(p){
   var a = p.id ? byId(db.accounts, p.id) : null;
-  var provinces = [], districts = [], wards = [];
-  db.houses.forEach(function(x){ provinces.push(x.province); districts.push(x.district); wards.push(x.ward); });
-  db.accounts.forEach(function(x){ provinces.push(x.province); districts.push(x.district); wards.push(x.ward); });
   var h = pageTitle(a ? 'Sửa nhân viên' : 'Thêm nhân viên');
-  /* Đợt 5 (mục 22): hồ sơ nhân viên đầy đủ như hồ sơ khách/chủ nhà, đúng thứ tự ảnh */
+  /* Đợt 5 (mục 22): hồ sơ nhân viên đầy đủ như hồ sơ khách/chủ nhà, đúng thứ tự ảnh.
+     Đợt 6 (điểm cộng mục 1): Tỉnh/Quận/Phường dùng chung select xếp tầng hành chính VN */
   h += '<form class="form-card" onsubmit="event.preventDefault();saveStaff(\''+(a?a.id:'')+'\')"><div class="fgrid">' +
     fld('Họ tên', inp('st_name', a?a.name:''), true) +
     avatarPhHtml() +
     fld('Ngày sinh', inp('st_dob', a?a.dob:'', 'date')) +
-    fld('Tỉnh / thành phố', sel('st_province', locOptions(provinces, a?a.province:''), a?a.province:'')) +
-    fld('Quận / Huyện', sel('st_district', locOptions(districts, a?a.district:''), a?a.district:'')) +
-    fld('Phường / Xã', sel('st_ward', locOptions(wards, a?a.ward:''), a?a.ward:'')) +
+    fld('Tỉnh / thành phố', locSelectHtml('st', 'province')) +
+    fld('Quận / Huyện', locSelectHtml('st', 'district')) +
+    fld('Phường / Xã', locSelectHtml('st', 'ward')) +
     fld('Địa chỉ thường trú', inp('st_perm', a?a.permanentAddress:'')) +
     fld('SDT (dùng đăng nhập)', inp('st_phone', a?a.phone:''), true) +
     fld('Giới tính', sel('st_gender', ['Nam','Nữ','Khác'], a?a.gender:'Nam')) +
@@ -2490,6 +2644,8 @@ function viewStaffForm(p){
     '<button class="btn gray" type="button" onclick="go(\'staff\')">Quay lại</button></div></form>';
   if(a) h += '<p style="color:#757575;max-width:1080px">Đặt lại mật khẩu cho nhân viên này: dùng chức năng ở mục Quản lý → Cài đặt (admin) hoặc API đặt lại mật khẩu.</p>';
   setContent(h);
+  /* Đợt 6: nạp select hành chính xếp tầng, chọn sẵn theo hồ sơ đã lưu */
+  locInit('st', { province: a ? a.province : '', district: a ? a.district : '', ward: a ? a.ward : '' });
 }
 function saveStaff(id){
   var data = { name: val('st_name'), phone: val('st_phone'), role: val('st_role'),
@@ -2583,8 +2739,10 @@ function viewAssets(){
   h += '<div class="grid-stats">' + ['Mới','Như mới','Tốt','Cũ','Hỏng','Mất'].map(function(s){
     return '<div class="stat"><div class="num">'+(counts[s]||0)+'</div><div class="lbl">'+s+'</div></div>'; }).join('') + '</div>';
   h += '<div class="btnrow"><button class="btn green" onclick="go(\'assetForm\')">+ Thêm tài sản</button></div>';
-  h += tableHtml(['STT','Nhà','Phòng','Mã TS','Loại tài sản','Trạng thái',''], db.assets.map(function(a, i){
+  h += tableHtml(['STT','Nhà','Phòng','Mã TS','Loại tài sản','Trạng thái','Ảnh',''], db.assets.map(function(a, i){
     return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(a.houseId))+'</td><td>'+esc(roomName(a.roomId))+'</td><td>'+esc(a.code)+'</td><td><b>'+esc(a.type)+'</b></td><td>'+esc(a.status)+'</td>' +
+      /* Đợt 6 (mục 2): thumbnail ảnh tài sản đã tải lên */
+      '<td>'+(a.imageUrl ? '<img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản">' : '')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'assetForm\',{id:\''+a.id+'\'})">Cập nhật</button>' +
       '<button class="linkbtn red" onclick="delBtn(\'Tài sản '+esc(a.type)+'\',\'assets\',\''+a.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có tài sản nào');
@@ -2600,6 +2758,8 @@ function viewAssetForm(p){
     fld('Mã tài sản (để trống = tự sinh)', inp('a_code', a?a.code:'')) + fld('Loại tài sản', inp('a_type', a?a.type:''), true) +
     fld('Trạng thái', sel('a_status', ASSET_STATUSES, a?a.status:'Tốt')) +
     fld('Note', inp('a_note', a?a.note:'')) +
+    /* Đợt 6 (mục 2): ảnh tài sản tải lên thật — cùng bộ chọn ảnh với form nhà */
+    imagePickerHtml('a_img', a ? (a.imageUrl || '') : '', 'Ảnh tài sản') +
     '</div><div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
     '<button class="btn gray" type="button" onclick="go(\'assets\')">Quay lại</button></div></form>';
   setContent(h);
@@ -2608,7 +2768,7 @@ function saveAsset(id){
   var room = byId(db.rooms, val('a_room'));
   var data = { houseId: room ? room.houseId : val('a_house'), roomId: val('a_room') || null,
     code: val('a_code'), ownerType: val('a_owner'), type: val('a_type'), status: val('a_status'),
-    note: val('a_note') };
+    note: val('a_note'), imageUrl: val('a_img') };
   var pr = id ? updateRec('assets', id, data) : createRec('assets', data);
   pr.then(function(){ toast('Đã lưu tài sản'); go('assets'); }).catch(errToast);
 }

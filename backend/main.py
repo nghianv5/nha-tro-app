@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import models, schemas
 from .database import SessionLocal, engine, ensure_columns
-from .routers import auth, business
+from .routers import auth, business, upload as upload_router_mod
 from .routers.crud import make_crud_router
 from .security import get_current_user, hash_password, require_admin
 from .seed import seed_db
@@ -159,6 +159,12 @@ app.include_router(business.router, prefix=API)
 app.include_router(business.inv_router, prefix=API)
 app.include_router(business.lm_router, prefix=API)
 app.include_router(business.util_router, prefix=API)
+
+# ----- Upload ảnh (đợt 6): POST /api/upload + phục vụ tĩnh /uploads/... -----
+app.include_router(upload_router_mod.router, prefix=API)
+os.makedirs(upload_router_mod.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=upload_router_mod.UPLOAD_DIR),
+          name="uploads")
 
 
 @app.get("/api/health", dependencies=_LOGIN_REQUIRED)

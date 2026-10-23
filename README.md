@@ -362,6 +362,56 @@ kiểu cũ không `toMonth` báo lỗi "Đã có hóa đơn tháng" đúng, than
 chi đúng người nhận/người chi; harness jsdom (app.js thật + API giả lập) **73/73 assert pass**
 cho 24 mục + helper.
 
+## Đợt 6 — Địa chỉ hành chính dạng select + tải ảnh thật + responsive mobile
+
+1. **Select hành chính Việt Nam xếp tầng (form Thêm/Sửa nhà):** Tỉnh / TP, Quận / Huyện,
+   Phường / Xã không còn là ô text — là 3 select xếp tầng: chọn Tỉnh → nạp Quận/Huyện →
+   chọn Quận → nạp Phường/Xã. Dữ liệu hành chính thật đóng gói tĩnh tại
+   `frontend/vn-admin.js` (nguồn: provinces.open-api.vn, API depth=3 — **63 tỉnh/thành,
+   696 quận/huyện, 10.051 phường/xã**), app tự chạy offline, không gọi API ngoài lúc chạy.
+   Tên đã chuẩn hoá bỏ tiền tố hành chính (Tỉnh/Thành phố/Quận/Huyện/Phường/Xã/Thị trấn/
+   Thị xã) để khớp convention tên ngắn của hệ thống (vd "Hà Nội", "Đống Đa"); nơi bỏ tiền
+   tố gây trùng tên hoặc còn lại là số thuần (vd "Quận 1") thì giữ tên đầy đủ. Chế độ sửa
+   chọn sẵn theo tên đã lưu; giá trị đã lưu không có trong dữ liệu chuẩn (vd tên phường cũ
+   "Phương Liên" trước khi sáp nhập thành "Phương Liên - Trung Tự") vẫn được giữ làm một
+   lựa chọn để không mất dữ liệu. Áp dụng thêm cho form Nhân viên (dùng chung helper).
+2. **Tải ảnh tài sản thật:** mỗi dòng tài sản ở phần Tài sản (form nhà) và form Tài sản
+   (Quản lý) có nút chọn ảnh → tải lên server qua `POST /api/upload`, hiện thumbnail ngay
+   trong dòng, lưu kèm tài sản (cột `assets.image_url`), mở Sửa thấy lại ảnh; thay/bỏ ảnh
+   được. Danh sách Tài sản có cột Ảnh (thumbnail).
+3. **Ảnh CMND/CCCD của chủ nhà tải lên thật:** 2 ô mặt trước / mặt sau ở phần Chủ Nhà
+   (form nhà) và form Chủ nhà (Quản lý) — tải lên, xem trước, lưu vào hồ sơ chủ nhà
+   (cột `landlords.id_card_image1`, `id_card_image2`). Lưu ý: khi lưu nhà với một chủ nhà
+   có sẵn được chọn, hồ sơ chủ nhà (kèm 2 ảnh CMND) được cập nhật lại theo form — đúng
+   nhãn "chọn là tự điền hồ sơ, sửa được".
+4. **Ảnh sổ đỏ của nhà:** khu vực "Ảnh sổ đỏ" ở phần Thông Tin Nhà — chọn được NHIỀU ảnh
+   (các trang sổ đỏ), hiện lưới thumbnail, xóa từng ảnh, lưu danh sách URL vào
+   `houses.red_book_images` (JSON).
+5. **Endpoint upload:** `POST /api/upload` (multipart, bắt buộc đăng nhập JWT) — chỉ nhận
+   png/jpg/jpeg/gif/webp, tối đa 5MB, kiểm tra cả chữ ký file (magic bytes). File lưu ở
+   thư mục `uploads/` (đổi bằng biến môi trường `UPLOAD_DIR`), phục vụ tĩnh tại
+   `/uploads/...`. Cần gói `python-multipart` (đã thêm vào `requirements.txt`). Các cột
+   mới được tự bổ sung vào DB cũ qua `ensure_columns()` — không cần xóa DB.
+6. **Responsive web + mobile:** thêm khối CSS `@media (max-width:1024px)` và
+   `(max-width:768px)` trong `frontend/styles.css` — menu ngang cuộn ngang được, bảng dữ
+   liệu cuộn ngang trong khung chứa, lưới form về 1 cột, popup vừa màn hình, nút/ô nhập
+   đủ lớn để chạm (≥44px), thống kê 2 cột. Desktop giữ nguyên hiển thị như trước.
+
+**⚠️ Lưu ý vận hành về ảnh trên Render:** ảnh lưu trên đĩa của web service. Đĩa này
+KHÔNG bền vững — ảnh có thể mất khi Render deploy lại/rebuild (trừ khi gắn **Persistent
+Disk** và đặt biến môi trường `UPLOAD_DIR` trỏ vào thư mục trên disk đó). Cân nhắc gắn
+Persistent Disk (có phí) nếu cần giữ ảnh lâu dài.
+
+**Kiểm chứng đợt 6:** pytest **55/55 pass** (45 cũ + 10 test mới tại `tests/test_upload.py`:
+upload chưa đăng nhập → 401, file không phải ảnh/nội dung giả ảnh/quá 5MB → 400, upload
+PNG/GIF thật → URL truy cập được đúng content-type + bytes, round-trip `imageUrl` của tài
+sản, ảnh CMND chủ nhà, `redBookImages` của nhà, file vn-admin.js phục vụ được);
+`node --check` cho `app.js` + `vn-admin.js` OK; server uvicorn thật: login → upload PNG →
+mở URL trả về **200 image/png, bytes khớp**; mô phỏng DB cũ thiếu 3 cột mới → khởi động
+app tự bổ sung qua `ensure_columns()`; harness jsdom **24/24 assert pass** (select xếp
+tầng chọn sẵn đúng tên đã lưu + giữ tên phường cũ, đổi tỉnh/quận nạp lại đúng, lưới ảnh
+sổ đỏ, ảnh CMND, payload lưu nhà/chủ nhà/tài sản).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

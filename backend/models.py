@@ -38,6 +38,7 @@ class House(TimestampMixin, Base):
     businessType = Column("business_type", String, default="")  # Loại nhà trọ: Chung cư mini|Nhà nguyên căn|Homestay|Phòng đơn|Phòng trọ
     rentalMode = Column("rental_mode", String, default="Bao phòng")  # Hình thức cho thuê: Bao phòng | Bao người (SPEC-WEB-2 A)
     description = Column(Text, default="")
+    redBookImages = Column("red_book_images", JSON, default=list)  # Danh sách URL ảnh sổ đỏ tải lên (đợt 6, mục 5)
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=True)
 
 
@@ -218,6 +219,7 @@ class Asset(TimestampMixin, Base):
     type = Column(String, default="")
     status = Column(String, default="Tốt")  # Mới|Như mới|Tốt|Cũ|Hỏng|Mất
     note = Column(Text, default="")
+    imageUrl = Column("image_url", String, default="")  # Ảnh tài sản đã tải lên /uploads/... (đợt 6)
 
 
 class Unit(TimestampMixin, Base):
@@ -305,6 +307,9 @@ class Landlord(TimestampMixin, Base):
     email = Column(String, default="")
     idCard = Column("id_card", String, default="")
     permanentAddress = Column("permanent_address", String, default="")
+    # Ảnh CMND/CCCD tải lên thật (đợt 6, mục 4): URL /uploads/... mặt trước / mặt sau
+    idCardImage1 = Column("id_card_image1", String, default="")
+    idCardImage2 = Column("id_card_image2", String, default="")
 
 
 class LandlordContract(TimestampMixin, Base):

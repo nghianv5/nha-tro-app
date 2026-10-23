@@ -53,6 +53,7 @@ NEW_COLUMNS = {
         "business_type": "VARCHAR DEFAULT ''",
         "description": "TEXT DEFAULT ''",
         "rental_mode": "VARCHAR DEFAULT 'Bao phòng'",  # SPEC-WEB-2 A
+        "red_book_images": "JSON DEFAULT '[]'",  # Đợt 6 (mục 5) — danh sách URL ảnh sổ đỏ
     },
     "rooms": {
         "kitchen": "VARCHAR DEFAULT 'Không có'",
@@ -68,6 +69,7 @@ NEW_COLUMNS = {
     "assets": {  # SPEC-WEB-2 A — tài sản chủ nhà + ghi chú
         "owner_type": "VARCHAR DEFAULT 'room'",
         "note": "TEXT DEFAULT ''",
+        "image_url": "VARCHAR DEFAULT ''",  # Đợt 6 — ảnh tài sản tải lên
     },
     "landlords": {
         "dob": "DATE",
@@ -77,6 +79,8 @@ NEW_COLUMNS = {
         "email": "VARCHAR DEFAULT ''",
         "id_card": "VARCHAR DEFAULT ''",
         "permanent_address": "VARCHAR DEFAULT ''",
+        "id_card_image1": "VARCHAR DEFAULT ''",  # Đợt 6 (mục 4) — ảnh CMND mặt trước
+        "id_card_image2": "VARCHAR DEFAULT ''",  # Đợt 6 (mục 4) — ảnh CMND mặt sau
     },
     "accounts": {
         "dob": "DATE",

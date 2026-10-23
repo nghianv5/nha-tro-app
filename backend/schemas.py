@@ -28,6 +28,7 @@ class HouseCreate(BaseModel):
     rentalMode: Optional[str] = "Bao phòng"
     description: Optional[str] = ""
     landlordId: Optional[str] = None
+    redBookImages: Optional[List[str]] = []
 
 
 class HouseUpdate(BaseModel):
@@ -45,6 +46,7 @@ class HouseUpdate(BaseModel):
     rentalMode: Optional[str] = None
     description: Optional[str] = None
     landlordId: Optional[str] = None
+    redBookImages: Optional[List[str]] = None
 
 
 class HouseOut(OutBase, HouseCreate):
@@ -414,6 +416,7 @@ class AssetCreate(BaseModel):
     type: str = ""
     status: Optional[str] = "Tốt"
     note: Optional[str] = ""
+    imageUrl: Optional[str] = ""
 
 
 class AssetUpdate(BaseModel):
@@ -424,6 +427,7 @@ class AssetUpdate(BaseModel):
     type: Optional[str] = None
     status: Optional[str] = None
     note: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 
 class AssetOut(OutBase, AssetCreate):
@@ -585,6 +589,8 @@ class LandlordCreate(BaseModel):
     email: Optional[str] = ""
     idCard: Optional[str] = ""
     permanentAddress: Optional[str] = ""
+    idCardImage1: Optional[str] = ""
+    idCardImage2: Optional[str] = ""
 
 
 class LandlordUpdate(BaseModel):
@@ -598,6 +604,8 @@ class LandlordUpdate(BaseModel):
     email: Optional[str] = None
     idCard: Optional[str] = None
     permanentAddress: Optional[str] = None
+    idCardImage1: Optional[str] = None
+    idCardImage2: Optional[str] = None
 
 
 class LandlordOut(OutBase, LandlordCreate):

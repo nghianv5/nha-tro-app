@@ -108,3 +108,67 @@ textarea{resize:vertical;min-height:56px}
 .radio-line{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0 4px}
 .radio-line input{width:auto}
 @media print{ .topbar,.noprint{display:none!important} body{background:#fff} main{padding:0} .print-sheet{box-shadow:none} }
+/* ----- Đợt 6: ảnh tải lên (tài sản / CMND / sổ đỏ) ----- */
+.asset-thumb{width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #cfd8dc;display:block;background:#eceff1}
+.asset-thumb-sm{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #cfd8dc;display:block;background:#eceff1}
+.doc-thumb{width:100%;max-width:190px;height:110px;object-fit:cover;border-radius:8px;border:1px solid #cfd8dc;display:block;background:#eceff1}
+.rb-grid{display:flex;flex-wrap:wrap;gap:10px}
+.rb-cell{position:relative}
+.rb-thumb{width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid #cfd8dc;display:block;background:#eceff1}
+.rb-x{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:#e53935;color:#fff;cursor:pointer;font-size:13px;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+/* ----- Đợt 6: Responsive — dùng tốt trên mobile (≤768px), desktop giữ nguyên ----- */
+@media (max-width:1024px){
+  main{padding:18px 14px}
+  .topbar{gap:10px;padding:0 12px}
+  .mainnav{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .mainnav>a,.mainnav>.dropdown>a{padding:8px 9px}
+}
+@media (max-width:768px){
+  body{font-size:14.5px}
+  /* Header: brand + userbox 1 hàng, menu ngang cuộn ngang ở hàng dưới */
+  .topbar{height:auto;flex-wrap:wrap;padding:8px 10px;gap:6px 10px}
+  .brand{font-size:17px}
+  .userbox{margin-left:auto;font-size:13px;gap:6px}
+  .mainnav{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .mainnav>a,.mainnav>.dropdown>a{padding:10px 11px;font-size:14px}
+  .dropdown-menu{position:fixed;top:auto;bottom:auto;right:10px;margin-top:4px}
+  main{padding:14px 10px}
+  h2.page{font-size:18px}
+  h3.sec{font-size:15px}
+  /* Form: lưới về 1 cột, ô nhập đủ lớn để chạm + tránh iOS tự phóng to */
+  .fgrid{grid-template-columns:1fr}
+  .form-card{padding:16px 14px}
+  input,select,textarea{font-size:16px;padding:11px 10px;min-height:44px}
+  textarea{min-height:64px}
+  .btn{min-height:44px;padding:11px 18px}
+  .btn.sm{min-height:38px;padding:8px 12px}
+  .linkbtn{padding:8px 6px;font-size:13.5px}
+  .chk{padding:8px 10px 8px 0}
+  .chk input{width:20px;height:20px}
+  /* Bộ lọc xếp dọc, tab cuộn ngang */
+  .filters{flex-direction:column;align-items:stretch;gap:10px}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  .tab{white-space:nowrap;padding:10px 14px}
+  /* Bảng: cuộn ngang trong khung chứa (.tblwrap đã có overflow-x:auto) */
+  table{min-width:600px;font-size:13px}
+  th,td{padding:8px}
+  .doc-sheet,.print-sheet{padding:18px 14px}
+  .doc-sheet table,.print-sheet table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0}
+  /* Hộp thoại vừa màn hình */
+  .modal .box{width:96%;max-width:96%;padding:16px 14px;max-height:92vh;border-radius:10px}
+  .toast{width:92%;text-align:center;font-size:13.5px}
+  /* Thống kê 2 cột, hero gọn lại */
+  .grid-stats{grid-template-columns:repeat(2,1fr);gap:8px}
+  .stat .num{font-size:21px}
+  .hero{padding:16px 14px}
+  .hero .big{font-size:22px}
+  .chart{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .chart .col{min-width:36px}
+  .kv{flex-direction:column;gap:2px}
+  .kv span:last-child{text-align:left}
+  .login-wrap{padding:12px}
+  .login-card{padding:24px 18px}
+  .map-ph{height:110px}
+  .rb-thumb{width:96px;height:96px}
+  .notif-item{padding:10px 12px}
+}
