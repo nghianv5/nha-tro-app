@@ -321,8 +321,11 @@ class MonthlyInvoiceRequest(BaseModel):
 
 
 class MonthlyBatchRequest(BaseModel):
-    """Tạo hóa đơn tháng cho MỌI phòng có HĐ active (SPEC-WEB-2 F)."""
+    """Tạo hóa đơn tháng cho MỌI phòng có HĐ active (SPEC-WEB-2 F).
+    Đợt 5: thêm toMonth tùy chọn — tạo cho CẢ KHOẢNG tháng month..toMonth
+    (vắng mặt = chỉ tháng `month` như cũ)."""
     month: str  # 'YYYY-MM'
+    toMonth: Optional[str] = None  # 'YYYY-MM'
 
 
 class MarkSentRequest(BaseModel):
@@ -774,6 +777,12 @@ class HouseUtilityUpdate(BaseModel):
 
 class HouseUtilityOut(OutBase, HouseUtilityCreate):
     id: str
+
+
+class PayUtilityRequest(BaseModel):
+    """Body tùy chọn khi thanh toán điện/nước nhà: amount > 0 sẽ cập nhật
+    số tiền của bản ghi trước khi đánh dấu đã thanh toán + sinh phiếu chi."""
+    amount: Optional[int] = None
 
 
 # ---------- Đăng nhập / xác thực ----------

@@ -194,7 +194,8 @@ nha-tro-app/
   **Mã Hóa Đơn dịch vụ**: lưu nhà kèm mã điện/mã nước sẽ tự tạo 2 bản ghi
   `house_utilities` của tháng hiện tại (chưa thanh toán, số tiền 0). Tab Tài sản
   chủ nhà cho thêm dòng tài sản (`assets.ownerType = 'landlord'`, mã tự sinh
-  8 số, có ghi chú). DS Nhà thêm cột **Số phòng / Số phòng trống**.
+  8 số, có ghi chú). DS Nhà thêm cột **Số phòng / Số phòng trống** (đã bỏ ở
+  đợt 3 — xem mục dưới).
 - **Phòng**: thêm **Số phòng con** (`rooms.subRooms`); 14 ô tiện ích đúng thiết
   kế (Cửa sổ, Ban công, Sân phơi, Thang máy, Điều hòa, Nóng lạnh, Máy giặt,
   Gác xép, Có chỗ để xe máy/ô tô/sạc xe điện, Bảo vệ, Camera, Internet) + bộ lọc
@@ -233,6 +234,133 @@ nha-tro-app/
   datetime đầy đủ từ `created_at` của bản ghi gốc.
 - Cột mới đều đi qua `ensure_columns` (không cần xóa DB); hóa đơn mẫu
   3.190.000đ nay có `sent = true` để dữ liệu mẫu có cả 2 trạng thái gửi.
+
+## Chỉnh màn Danh sách nhà đúng ảnh thiết kế (đợt 3)
+
+Màn **Nhà trọ → Danh sách nhà** đã chỉnh lại đúng y hệt ảnh chụp màn thiết kế
+Balsamiq "Danh sách Nhà tro" mà người dùng chốt:
+
+- Dưới menu có 2 nút điều hướng con: **Danh sách nhà** | **Thanh toán điện nước**.
+- Bộ lọc đúng **4 hàng**: (1) Tỉnh/thành phố — Quận/Huyện — Xã/phường (select
+  "Tất cả"); (2) **Tên nhà** — **Địa chỉ** — **SDT chủ nhà**, cả 3 là ô text
+  tìm kiếm, **gõ là lọc ngay** (chuỗi con, không phân biệt hoa thường; địa chỉ
+  lọc trên địa chỉ đầy đủ gồm phường/quận/tỉnh); (3) **Thời gian thanh toán
+  tiếp theo** Từ–Đến + checkbox **Sắp đến hạn thanh toán** (ngày thanh toán
+  tiếp theo trong vòng 30 ngày tới); (4) **Thời gian kết thúc hợp đồng** Từ–Đến
+  + checkbox **Sắp hết hạn hợp đồng** (HĐ chủ nhà kết thúc trong vòng 30 ngày
+  tới). Mọi điều kiện kết hợp AND; có nút **Xóa bộ lọc**.
+- Nút **Thêm nhà** ở góc phải, ngay phía trên bảng.
+- Bảng đúng các cột của ảnh: STT | Tên nhà | Địa chỉ (đầy đủ: số nhà, phường,
+  quận, tỉnh) | Chủ nhà | SDT chủ nhà | Mã hợp đồng | Giá thuê nhà (vnđ) |
+  Ngày thanh toán tiếp theo (tính từ `payDay` của HĐ chủ nhà) | Ngày kết thúc
+  hợp đồng | Sửa | Xóa. Đã **bỏ 2 cột Số phòng / Số phòng trống** của đợt 2.
+  Nhà tự quản lý (không có HĐ chủ nhà) để trống các cột của hợp đồng. Xóa vẫn
+  qua modal nhập mật khẩu xác thực. Chỉ sửa frontend (`frontend/app.js`),
+  không đổi backend/API.
+
+## Chỉnh màn Thanh toán điện nước đúng ảnh thiết kế (đợt 4)
+
+Màn **Nhà trọ → Thanh toán điện nước** (`house_utilities`) đã chỉnh lại đúng
+ảnh chụp màn thiết kế Balsamiq "Dien nuoc nha" mà người dùng chốt:
+
+- Trên cùng có hàng nút điều hướng con **Danh sách nhà** | **Thanh toán
+  điện nước**; dưới là thanh tab **[Điện] [Nước]** với nhãn đơn giản —
+  **không còn kèm số đếm "(Chưa thanh toán N)"**. Tab thứ ba **Chốt điện
+  nước chủ nhà** và nút **+ Thêm hóa đơn tháng mới** được giữ lại.
+- Bộ lọc: **Tên nhà** và **Địa chỉ** là 2 ô text riêng, **gõ là lọc ngay**
+  (chuỗi con, không phân biệt hoa thường; địa chỉ lọc trên địa chỉ đầy đủ);
+  **Mã điện / Mã nước** lọc theo chuỗi con của mã khách hàng; **Thời gian**
+  chỉ còn **1 ô chọn tháng** (đã bỏ bộ lọc khoảng tháng Từ–Đến của đợt 2) và
+  **mặc định lấy tháng hiện tại** đúng ghi chú thiết kế; **Trạng thái** gồm
+  Tất cả | Chưa thanh toán | Đã thanh toán. Mọi điều kiện kết hợp AND; nút
+  **Xóa bộ lọc** đưa Thời gian về tháng hiện tại, các ô còn lại về mặc định.
+- Bảng đúng thứ tự cột của ảnh: STT | Tên nhà | Địa chỉ (đầy đủ) | Mã Điện
+  (tab Nước: Mã Nước) | Chủ tài khoản | Tài Khoản | Mật khẩu | Thời gian |
+  Tiền thanh toán | nút hành động. **Bỏ cột Trạng thái dạng badge.** Thời
+  gian hiển thị dạng `2020/9` (năm/tháng, không số 0 ở đầu); chưa có tiền
+  (0/trống) hiển thị dãy gạch `--------------------`.
+- **Nút hành động theo trạng thái** (điểm cốt lõi của ảnh): dòng **đã thanh
+  toán** chỉ có nút **[Lịch sử]**; dòng **chưa thanh toán** có **[Thanh
+  toán]** và **[Lịch sử]**. Nút Thanh toán mở **hộp thoại xác nhận** có ô
+  **Số tiền thanh toán** (điền sẵn số tiền hiện có của bản ghi nếu > 0; để
+  trống/0 thì bắt buộc nhập) — xác nhận sẽ cập nhật số tiền rồi mới đánh dấu
+  đã thanh toán và sinh phiếu chi đúng số tiền đó. Nút Lịch sử xem mọi tháng
+  của cùng một mã điện/nước.
+- Backend mở rộng tối thiểu: `POST /api/house-utilities/{id}/pay` nhận thêm
+  body tùy chọn `{amount}` — khi `amount > 0` thì cập nhật `amount` của bản
+  ghi trước khi đổi trạng thái `paid` và sinh phiếu chi (không gửi body vẫn
+  chạy như cũ). Có test mới `test_house_utilities_pay_with_amount`; tổng
+  test hiện tại: **44**.
+
+## Chỉnh 24 màn hình đúng ảnh thiết kế (đợt 5) + rà soát toàn bộ
+
+Đợt này chỉnh các form/lưới cho khớp ảnh Balsamiq người dùng gửi và rà soát lại cả 57 màn
+trong `design-web-dump.txt`. Quy ước mới: tiền ở lưới Phòng/Cọc/Hợp đồng hiển thị **theo triệu
+dạng thập phân** (helper `fmtTrieu`: 4.500.000 → "4.5", cột ghi "(triệu)"); ảnh chụp người dùng
+là chuẩn cao nhất khi khác spec cũ.
+
+**Form (bỏ tab, chuyển 1 trang cuộn):**
+- Nhà: 5 phần Thông Tin Nhà → Chủ Nhà → Hợp Đồng → Mã Hóa Đơn dịch vụ → Tài sản; Loại hình
+  kinh doanh đúng 4 lựa chọn; khung placeholder bản đồ (📍) + ô ghi chú vị trí; chọn chủ nhà
+  có sẵn tự điền hồ sơ; avatar + 2 ô ảnh CMND dạng placeholder; tài sản chủ nhà theo dòng
+  (Loại tài sản select/Trạng thái select/ảnh placeholder, sửa nhà thì hiện tài sản sẵn có và
+  cập nhật đúng dòng). Form bỏ "Hình thức cho thuê" (cột DB giữ nguyên, lưu nhà giữ giá trị cũ).
+- Phòng: thứ tự trường theo ảnh; Giá phòng nhập theo TRIỆU (lưu ×1.000.000); Chung chủ = checkbox;
+  Dịch vụ dạng từng dòng "Tên — giá vnđ/đơn vị" có nút Sửa từng dòng + hàng thêm dịch vụ từ
+  danh mục; Bếp mặc định "Không có"; đúng 14 checkbox tiện ích; 7 loại phòng.
+- Cọc: 1 trang, chọn Nhà → Phòng (tiêu đề "Phòng <tên>"), Thông tin khách (chọn khách có sẵn
+  + hồ sơ đầy đủ + ảnh CMND placeholder, lưu cọc thì cập nhật luôn hồ sơ khách đã chọn),
+  Thông tin phòng, Dịch Vụ; nút Cọc giữ phòng / Lưu thay đổi.
+- Hợp đồng: 1 trang, Khách hàng ở cuối; lưới hợp đồng chỉ còn lọc Nhà/Phòng, bỏ tab trạng
+  thái, bỏ nút Xóa và cột Trạng thái HĐ (vẫn xem ở Chi tiết hợp đồng), tiền theo triệu.
+
+**Hóa đơn:**
+- Lưới chính: bỏ cột Gửi; thêm cột Lịch sử thanh toán với icon ↻ (chỉ hiện khi đã có thanh
+  toán, bấm mở popup Thời gian | Số tiền | Người nhận); Chi tiết/Sửa/Xóa gộp 1 cột.
+- Chi tiết hóa đơn trình bày dạng chứng từ: "Hóa Đơn Tháng <n>" giữa trang, nhãn khoản thu
+  "<Tên> theo <cách tính>" (Điện theo công tơ, Nước theo đầu người/công tơ/phòng...), hàng
+  **Tổng dịch vụ**, **Tổng hóa đơn: … vnđ**; khối Quản lý thanh toán tách riêng bên dưới.
+- Tạo hóa đơn hàng tháng: lọc Từ tháng – Đến tháng (tối đa 12 tháng), mỗi dòng = phòng ×
+  tháng, nhãn tháng dạng 2020/10; nút Tạo lại toàn bộ có popup xác nhận đúng nguyên văn;
+  bảng kết quả từng dòng kèm tháng. Backend: `POST /api/invoices/monthly-batch` nhận thêm
+  `toMonth` tùy chọn (vắng mặt = hành vi cũ) — test mới `test_monthly_batch_range_two_months`.
+- Hóa đơn đặc biệt: lưới có đủ select Nhà/Phòng + nút Gửi Hóa đơn; form tạo có Phòng trọ là
+  select lọc, Số tiền thu là text, Ghi chú là textarea; thêm màn riêng **Gửi hóa đơn đặc biệt**
+  (lọc Nhà/Phòng/Lý do thu/Ngày tạo, nút Gửi / Gửi tất cả).
+
+**Tài chính:** lưới Thu thay cột Khoản thu bằng **Mã hóa đơn**; form phiếu thu/chi làm lại:
+tab Thu/Chi trên cùng, Số tiền dạng text, Người thu/Người chi + Ngày tạo/Ngày thu (chi);
+Đối tượng nộp tiền = cascade Nhà → Phòng → Khách thuê (từ hợp đồng đang thuê) + ô Người khác;
+Đối tượng nhận tiền = 2 radio Khách thuê / Người khác (Tên + SĐT). Backend: thanh toán điện
+nước nhà tự sinh phiếu chi với Người nhận = chủ tài khoản tiện ích, Người chi = người dùng
+hiện tại; hoàn cọc khi thanh lý điền đủ phòng/hợp đồng/ngày chi/người nhận.
+
+**Dịch vụ:** Thêm Dịch Vụ góc phải trên bảng, giá hiển thị đầy đủ vnđ, nút Sửa/Xóa dạng icon
+✎/🗑 (xóa vẫn qua modal mật khẩu); form chỉ 3 trường (Tên, Giá [text], Đơn vị từ danh mục).
+
+**Nhân viên:** đúng 3 tab con [Phân chức vụ theo nhà] [Danh sách nhân viên] [Phân chia vai
+trò theo chức vụ]; tab danh sách gom theo nhân viên (rowspan, "Tên(SDT)", cột Nhà liệt kê
+theo từng chức vụ), lọc Nhân Viên là select; form hồ sơ đầy đủ như khách/chủ nhà (avatar,
+Tỉnh/Quận/Phường dạng select, CMND + 2 ảnh placeholder); tab vai trò: bảng STT | Chức vụ |
+Vai Trò (tóm tắt quyền dạng chữ, admin = "Tất cả các quyền"), nút Thêm chức vụ dưới bảng,
+ma trận quyền giữ nguyên. CRUD Chức vụ cũ gộp vào tab vai trò.
+
+**Thông báo:** bỏ thẻ cài đặt khỏi đầu trang; nút ⚙ Cài đặt thông báo góc phải mở hộp thoại
+bật/tắt từng loại (lưu localStorage); feed 2 cột: ngày giờ dạng `2021/1/14 21:19` + nội dung.
+
+**Rà soát toàn bộ (audit):** sửa thêm — màn Lịch sử thanh toán (tất cả) cột đúng thiết kế
+(thêm Mã Hợp đồng, bỏ Người nhận); lưới HĐ chủ nhà tiền theo triệu, Kỳ thanh toán "Mỗi N
+tháng", Thời gian thanh toán "Ngày X đến Y"; hồ sơ khách/chủ nhà có avatar placeholder; form
+chủ nhà nút Thêm chủ nhà / Lưu thay đổi; xuất CSV phòng thêm cột Số phòng + Dịch vụ; bản in
+hóa đơn dùng cùng nhãn chứng từ + hàng Tổng dịch vụ. Các màn không có ảnh riêng (Tổng quan,
+Xe, Tài sản, Sự cố, Khách thuê, Đơn vị tính, Cài đặt, đăng nhập) đã đối chiếu SPEC-WEB và giữ
+nguyên vì đã khớp.
+
+**Kiểm chứng đợt 5:** `node --check frontend/app.js` OK; pytest **45/45 pass** (44 cũ + 1
+test mới batch theo khoảng); server thật + login admin: batch 2 tháng tạo đủ 2 hóa đơn, batch
+kiểu cũ không `toMonth` báo lỗi "Đã có hóa đơn tháng" đúng, thanh toán điện/nước sinh phiếu
+chi đúng người nhận/người chi; harness jsdom (app.js thật + API giả lập) **73/73 assert pass**
+cho 24 mục + helper.
 
 ## Ghi chú
 

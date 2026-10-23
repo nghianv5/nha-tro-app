@@ -54,6 +54,44 @@ def test_monthly_batch_creates_and_reports_errors(client):
     assert r.json()["created"] >= 1
 
 
+def test_monthly_batch_range_two_months(client):
+    """Đợt 5: monthly-batch với toMonth tạo hóa đơn cho CẢ KHOẢNG 2 tháng,
+    mỗi kết quả kèm trường month; tháng chưa chốt điện báo lỗi riêng."""
+    house = make_house(client, "24 Đường Batch Khoảng")
+    room = make_room(client, house["id"], name="Phòng R1")
+    make_contract(client, house["id"], room["id"], phone="0900002401")
+    # Chốt số điện cho cả 2 tháng của khoảng
+    for d, prev, curr in (("2027-05-05", 0, 10), ("2027-06-05", 10, 25)):
+        r = client.post("/api/meter-readings", json={
+            "houseId": house["id"], "roomId": room["id"], "type": "dien",
+            "prev": prev, "current": curr, "date": d})
+        assert r.status_code == 201
+
+    r = client.post("/api/invoices/monthly-batch",
+                    json={"month": "2027-05", "toMonth": "2027-06"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["month"] == "2027-05" and body["toMonth"] == "2027-06"
+    mine = [x for x in body["results"] if x["roomId"] == room["id"]]
+    assert len(mine) == 2 and all(x["ok"] for x in mine)
+    assert {x["month"] for x in mine} == {"2027-05", "2027-06"}
+    invs = client.get("/api/invoices", params={"roomId": room["id"], "kind": "monthly"}).json()
+    months = {i["month"] for i in invs}
+    assert {"2027-05", "2027-06"} <= months
+
+    # Chạy lại cùng khoảng: cả 2 tháng đều báo "Đã có hóa đơn tháng"
+    r = client.post("/api/invoices/monthly-batch",
+                    json={"month": "2027-05", "toMonth": "2027-06"})
+    mine = [x for x in r.json()["results"] if x["roomId"] == room["id"]]
+    assert len(mine) == 2
+    assert all((not x["ok"]) and x["error"] == "Đã có hóa đơn tháng" for x in mine)
+
+    # Khoảng ngược (toMonth < month) -> 400
+    r = client.post("/api/invoices/monthly-batch",
+                    json={"month": "2027-06", "toMonth": "2027-05"})
+    assert r.status_code == 400
+
+
 # ---------- F: Đánh dấu đã gửi ----------
 def test_mark_sent_flow(client):
     house = make_house(client, "22 Đường Gửi HĐ")

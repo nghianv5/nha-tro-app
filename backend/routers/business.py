@@ -3,7 +3,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import calc, models, schemas
@@ -288,8 +288,23 @@ def _create_monthly_invoice(db, room_id, month, people=None, dien=(None, None), 
 def create_monthly_batch(payload: schemas.MonthlyBatchRequest, db: Session = Depends(get_db)):
     """Tạo hóa đơn tháng cho MỌI phòng có HĐ active. Trả kết quả TỪNG phòng:
     {roomId, ok, invoiceId} hoặc {roomId, ok: false, error} — lỗi cụ thể như
-    "Đã có hóa đơn tháng", "Chưa chốt số điện tháng này"."""
-    month = payload.month
+    "Đã có hóa đơn tháng", "Chưa chốt số điện tháng này".
+    Đợt 5: nếu payload có toMonth thì chạy cho CẢ KHOẢNG month..toMonth;
+    mỗi kết quả kèm thêm trường "month" của tháng tương ứng."""
+    months = [payload.month]
+    if payload.toMonth and payload.toMonth != payload.month:
+        months = []
+        y, m = int(payload.month[:4]), int(payload.month[5:7])
+        ey, em = int(payload.toMonth[:4]), int(payload.toMonth[5:7])
+        if (ey, em) < (y, m):
+            raise HTTPException(400, "Tháng kết thúc phải >= tháng bắt đầu")
+        while (y, m) <= (ey, em):
+            months.append("%04d-%02d" % (y, m))
+            m += 1
+            if m > 12:
+                m, y = 1, y + 1
+            if len(months) > 12:
+                raise HTTPException(400, "Khoảng tháng tối đa 12 tháng")
     room_ids = []
     for c in (db.query(models.Contract)
               .filter(models.Contract.status == "active")
@@ -297,38 +312,39 @@ def create_monthly_batch(payload: schemas.MonthlyBatchRequest, db: Session = Dep
         if c.roomId not in room_ids:
             room_ids.append(c.roomId)
     results = []
-    for room_id in room_ids:
-        existed = (db.query(models.Invoice)
-                   .filter(models.Invoice.roomId == room_id,
-                           models.Invoice.kind == "monthly",
-                           models.Invoice.month == month).first())
-        if existed:
-            results.append({"roomId": room_id, "ok": False, "error": "Đã có hóa đơn tháng"})
-            continue
-        contract = _active_contract_for_room(db, room_id)
-        # Điện tính theo số mà tháng này chưa chốt số điện -> báo lỗi riêng
-        dien_cfg = ((contract.services or {}).get("dien") or {}) if contract else {}
-        if contract and dien_cfg.get("price") and dien_cfg.get("unit", "so") == "so":
-            has_reading = any(
-                r.date and r.date.strftime("%Y-%m") == month
-                for r in db.query(models.MeterReading)
-                .filter(models.MeterReading.roomId == room_id,
-                        models.MeterReading.type == "dien").all())
-            if not has_reading:
-                results.append({"roomId": room_id, "ok": False,
-                                "error": "Chưa chốt số điện tháng này"})
+    for month in months:
+        for room_id in room_ids:
+            existed = (db.query(models.Invoice)
+                       .filter(models.Invoice.roomId == room_id,
+                               models.Invoice.kind == "monthly",
+                               models.Invoice.month == month).first())
+            if existed:
+                results.append({"roomId": room_id, "month": month, "ok": False, "error": "Đã có hóa đơn tháng"})
                 continue
-        try:
-            inv = _create_monthly_invoice(db, room_id, month)
-            results.append({"roomId": room_id, "ok": True, "invoiceId": inv.id})
-        except HTTPException as exc:
-            db.rollback()
-            results.append({"roomId": room_id, "ok": False, "error": str(exc.detail)})
-        except Exception as exc:  # phòng lỗi không kéo sập cả batch
-            db.rollback()
-            results.append({"roomId": room_id, "ok": False, "error": str(exc)})
+            contract = _active_contract_for_room(db, room_id)
+            # Điện tính theo số mà tháng này chưa chốt số điện -> báo lỗi riêng
+            dien_cfg = ((contract.services or {}).get("dien") or {}) if contract else {}
+            if contract and dien_cfg.get("price") and dien_cfg.get("unit", "so") == "so":
+                has_reading = any(
+                    r.date and r.date.strftime("%Y-%m") == month
+                    for r in db.query(models.MeterReading)
+                    .filter(models.MeterReading.roomId == room_id,
+                            models.MeterReading.type == "dien").all())
+                if not has_reading:
+                    results.append({"roomId": room_id, "month": month, "ok": False,
+                                    "error": "Chưa chốt số điện tháng này"})
+                    continue
+            try:
+                inv = _create_monthly_invoice(db, room_id, month)
+                results.append({"roomId": room_id, "month": month, "ok": True, "invoiceId": inv.id})
+            except HTTPException as exc:
+                db.rollback()
+                results.append({"roomId": room_id, "month": month, "ok": False, "error": str(exc.detail)})
+            except Exception as exc:  # phòng lỗi không kéo sập cả batch
+                db.rollback()
+                results.append({"roomId": room_id, "month": month, "ok": False, "error": str(exc)})
     created = sum(1 for r in results if r["ok"])
-    return {"month": month, "results": results,
+    return {"month": payload.month, "toMonth": months[-1], "results": results,
             "created": created, "failed": len(results) - created}
 
 
@@ -512,12 +528,19 @@ util_router = APIRouter(prefix="/house-utilities", tags=["house-utilities"], dep
 
 
 @util_router.post("/{utility_id}/pay")
-def pay_house_utility(utility_id: str, db: Session = Depends(get_db)):
+def pay_house_utility(utility_id: str,
+                      payload: Optional[schemas.PayUtilityRequest] = Body(default=None),
+                      db: Session = Depends(get_db),
+                      user=Depends(get_current_user)):
     util = db.get(models.HouseUtility, utility_id)
     if not util:
         raise HTTPException(404, "Không tìm thấy bản ghi điện nước")
     if util.status == "paid":
         raise HTTPException(400, "Khoản này đã thanh toán rồi")
+    # Số tiền thanh toán gửi kèm (từ hộp thoại xác nhận): cập nhật trước khi
+    # đánh dấu paid để phiếu chi sinh ra khớp đúng số tiền thực trả.
+    if payload is not None and payload.amount is not None and payload.amount > 0:
+        util.amount = payload.amount
     util.status = "paid"
     house = db.get(models.House, util.houseId)
     label = "điện" if util.type == "dien" else "nước"
@@ -526,6 +549,10 @@ def pay_house_utility(utility_id: str, db: Session = Depends(get_db)):
         code=gen_expense_code(), houseId=util.houseId,
         title="Thanh toán %s %s tháng %s" % (label, house_label, util.month),
         amount=util.amount or 0, date=_today(), payDate=_today(),
+        # Đợt 5 (mục 16): phiếu chi tự sinh có người chi = tài khoản đang thao tác,
+        # người nhận = chủ tài khoản tiện ích; SĐT người nhận để trống (không có dữ kiện)
+        spender=getattr(user, "name", "") or "",
+        receiverName=util.accountHolder or "", receiverPhone="",
         note="Tự tạo khi thanh toán %s của nhà (mã %s)" % (label, util.customerCode or ""))
     db.add(exp)
     db.commit()
@@ -586,10 +613,16 @@ def liquidate(contract_id: str, payload: schemas.LiquidateRequest, db: Session =
             db.flush()
             summary["invoiceId"] = inv.id
         elif summary["net"] < 0:
-            # Phiếu chi: hoàn trả khách
+            # Phiếu chi: hoàn trả khách (người nhận = khách của hợp đồng)
+            _cust = db.get(models.Customer, contract.customerId)
             exp = models.Expense(
-                houseId=contract.houseId, title="Thanh lý hợp đồng — hoàn trả khách",
+                houseId=contract.houseId, roomId=contract.roomId,
+                contractCode=contract.code or "",
+                title="Thanh lý hợp đồng — hoàn trả khách",
                 amount=-summary["net"], date=payload.liquidateDate,
+                payDate=payload.liquidateDate,
+                receiverName=_cust.name if _cust else "",
+                receiverPhone=_cust.phone if _cust else "",
                 note="Hoàn cọc/phòng thừa khi thanh lý")
             db.add(exp)
             db.flush()

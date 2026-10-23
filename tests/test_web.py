@@ -185,6 +185,28 @@ def test_house_utilities_pay_creates_expense(client):
     assert client.post(f"/api/house-utilities/{util['id']}/pay").status_code == 400
 
 
+def test_house_utilities_pay_with_amount(client):
+    """Pay kèm {amount}: cập nhật số tiền của bản ghi trước, phiếu chi khớp số tiền mới."""
+    house = make_house(client, "17 Đường Trả Kèm Tiền")
+    r = client.post("/api/house-utilities", json={
+        "houseId": house["id"], "type": "nuoc", "customerCode": "PN888",
+        "accountHolder": "Nguyễn Văn An", "username": "PN888", "password": "pw888",
+        "month": "2026-11", "amount": 0, "status": "unpaid"})
+    assert r.status_code == 201, r.text
+    util = r.json()
+
+    r = client.post(f"/api/house-utilities/{util['id']}/pay", json={"amount": 2750000})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["utility"]["status"] == "paid"
+    assert body["utility"]["amount"] == 2750000  # amount đã được cập nhật theo số tiền gửi kèm
+    exps = client.get("/api/expenses", params={"houseId": house["id"]}).json()
+    created = [e for e in exps if e["id"] == body["expenseId"]]
+    assert created and created[0]["amount"] == 2750000  # phiếu chi khớp số tiền mới
+    assert "Thanh toán nước" in created[0]["title"]
+
+
 def test_seed_house_utility_sample(client):
     utils = client.get("/api/house-utilities").json()
     sample = [u for u in utils if u["customerCode"] == "10120200915"]

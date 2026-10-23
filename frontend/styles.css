@@ -98,4 +98,13 @@ textarea{resize:vertical;min-height:56px}
 .switch{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px dashed #eceff1;font-size:14px}
 /* ----- Bản in hóa đơn ----- */
 .print-sheet{background:#fff;max-width:820px;margin:0 auto;padding:32px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+/* ----- Đợt 5: placeholder bản đồ / ảnh CMND / avatar + chứng từ hóa đơn ----- */
+.map-ph{height:150px;border:1px solid #b0bec5;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:34px;color:#c62828;background-color:#e8f5e9;background-image:linear-gradient(#c8e6c9 1px,transparent 1px),linear-gradient(90deg,#c8e6c9 1px,transparent 1px),linear-gradient(#bbdefb 1px,transparent 1px),linear-gradient(90deg,#bbdefb 1px,transparent 1px);background-size:52px 52px,52px 52px,26px 26px,26px 26px}
+.img-ph{flex:1;border:1.5px dashed #90a4ae;border-radius:8px;background:#eceff1;color:#607d8b;text-align:center;padding:16px 6px;font-size:12.5px;line-height:1.5}
+.avatar-ph{width:84px;height:84px;border:1.5px dashed #90a4ae;border-radius:50%;background:#eceff1;display:flex;align-items:center;justify-content:center;font-size:36px}
+.doc-sheet{background:#fff;max-width:820px;margin:0 auto;padding:28px 32px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.doc-sheet h2{text-align:center;color:#1565c0;margin-bottom:14px}
+.doc-line{font-size:14.5px;padding:4px 0}
+.radio-line{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0 4px}
+.radio-line input{width:auto}
 @media print{ .topbar,.noprint{display:none!important} body{background:#fff} main{padding:0} .print-sheet{box-shadow:none} }
