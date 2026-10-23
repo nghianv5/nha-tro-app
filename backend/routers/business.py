@@ -1,5 +1,6 @@
 """Endpoints nghiệp vụ: dashboard, phân tích, hóa đơn, thanh lý, seed."""
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,6 +27,66 @@ def _month_of(d, fallback=None):
 
 
 # ================================================================
+# Hóa đơn: trạng thái SUY RA + sinh mã (SPEC-WEB mục 2)
+# ================================================================
+def invoice_remaining(inv):
+    """Số tiền còn lại = total − discount − paidAmount."""
+    return (inv.total or 0) - (inv.discount or 0) - (inv.paidAmount or 0)
+
+
+def invoice_status(inv):
+    """Trạng thái suy ra: paid (Thanh toán hết) | partial (Thanh toán thiếu)
+    | unpaid (Chưa thanh toán)."""
+    if invoice_remaining(inv) <= 0:
+        return "paid"
+    if (inv.paidAmount or 0) > 0:
+        return "partial"
+    return "unpaid"
+
+
+def sync_invoice_status(inv):
+    """Đồng bộ cột status lưu trong DB theo trạng thái suy ra."""
+    inv.status = invoice_status(inv)
+    return inv
+
+
+def _room_code_part(db, room_id):
+    """Phần mã phòng từ tên phòng: 'Phòng 101' -> '101'; không có số thì
+    lấy tên viết liền bỏ dấu cách."""
+    room = db.get(models.Room, room_id) if room_id else None
+    if not room:
+        return ""
+    digits = re.sub(r"\D", "", room.name or "")
+    return digits or re.sub(r"\s+", "", room.name or "")
+
+
+def gen_invoice_code(db, room_id, when=None):
+    """Mã hóa đơn: tên phòng + YYYYMMDDHHmmss."""
+    when = when or datetime.now()
+    return _room_code_part(db, room_id) + when.strftime("%Y%m%d%H%M%S")
+
+
+def gen_receipt_code(db, room_id, when=None):
+    """Mã phiếu thu: 'T' + mã phòng + YYYYMMDDHHmmss."""
+    when = when or datetime.now()
+    return "T" + _room_code_part(db, room_id) + when.strftime("%Y%m%d%H%M%S")
+
+
+def gen_expense_code(when=None):
+    """Mã phiếu chi: 'CHI' + YYYYMMDDHHmmss."""
+    when = when or datetime.now()
+    return "CHI" + when.strftime("%Y%m%d%H%M%S")
+
+
+def _active_contract_for_room(db, room_id):
+    if not room_id:
+        return None
+    return (db.query(models.Contract)
+            .filter(models.Contract.roomId == room_id,
+                    models.Contract.status == "active").first())
+
+
+# ================================================================
 # Dashboard (màn Home)
 # ================================================================
 @router.get("/dashboard")
@@ -37,7 +98,8 @@ def dashboard(db: Session = Depends(get_db)):
     deposit_room_ids = {d.roomId for d in db.query(models.Deposit).all()}
     rooms = db.query(models.Room).all()
     empty_rooms = [r for r in rooms if r.id not in rented_room_ids and r.id not in deposit_room_ids]
-    unpaid = db.query(models.Invoice).filter(models.Invoice.status == "unpaid").all()
+    all_invoices = db.query(models.Invoice).all()
+    unpaid = [i for i in all_invoices if invoice_status(i) != "paid"]
     overdue = [i for i in unpaid if (i.month and i.month < cur_month) or
                (not i.month and i.createdDate and i.createdDate < today.replace(day=1))]
     expiring = [c for c in contracts if c.endDate and today <= c.endDate <= today + timedelta(days=30)]
@@ -46,7 +108,7 @@ def dashboard(db: Session = Depends(get_db)):
     not_metered = [rid for rid in rented_room_ids if rid not in readings_this_month]
     open_incidents = db.query(models.Incident).filter(models.Incident.status != "Đã sửa").count()
     return {
-        "upcomingPayments": sum(i.total for i in unpaid),
+        "upcomingPayments": sum(invoice_remaining(i) for i in unpaid),
         "expiringContracts": len(expiring),
         "emptyRooms": len(empty_rooms),
         "deposits": db.query(models.Deposit).count(),
@@ -74,16 +136,18 @@ def analytics(db: Session = Depends(get_db)):
             mm += 12
             yy -= 1
         months.append("%04d-%02d" % (yy, mm))
+    # Thu theo tháng = tổng PHIẾU THU theo ngày thu (SPEC-WEB mục 3.7)
     income = {mth: 0 for mth in months}
-    for inv in db.query(models.Invoice).filter(models.Invoice.status == "paid").all():
-        key = inv.month or _month_of(inv.createdDate)
+    for rc in db.query(models.Receipt).all():
+        key = _month_of(rc.collectDate) or _month_of(rc.createdDate)
         if key in income:
-            income[key] += inv.total
+            income[key] += rc.amount or 0
+    # Chi = phiếu chi (theo ngày chi, thiếu thì ngày tạo) + tiền nhà đã trả
     expense = {mth: 0 for mth in months}
     for e in db.query(models.Expense).all():
-        key = _month_of(e.date)
+        key = _month_of(e.payDate) or _month_of(e.date)
         if key in expense:
-            expense[key] += e.amount
+            expense[key] += e.amount or 0
     for p in db.query(models.HousePayment).filter(models.HousePayment.status == "paid").all():
         key = _month_of(p.date)
         if key in expense:
@@ -133,6 +197,7 @@ def get_invoice(invoice_id: str, db: Session = Depends(get_db)):
 @inv_router.post("", response_model=schemas.InvoiceOut, status_code=201)
 def create_invoice(payload: schemas.InvoiceCreate, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude={"lines"})
+    want_paid = data.pop("status", None) == "paid"
     inv = models.Invoice(**data)
     for ln in (payload.lines or []):
         inv.lines.append(models.InvoiceLine(**ln.model_dump()))
@@ -140,6 +205,11 @@ def create_invoice(payload: schemas.InvoiceCreate, db: Session = Depends(get_db)
         inv.total = (inv.roomFee or 0) + sum(l.amount or 0 for l in inv.lines)
     if inv.createdDate is None:
         inv.createdDate = _today()
+    if not inv.code:
+        inv.code = gen_invoice_code(db, inv.roomId)
+    if want_paid:  # tương thích ngược: tạo thẳng hóa đơn đã thanh toán hết
+        inv.paidAmount = max(0, (inv.total or 0) - (inv.discount or 0))
+    sync_invoice_status(inv)
     db.add(inv)
     db.commit()
     db.refresh(inv)
@@ -192,6 +262,7 @@ def create_monthly_invoice(payload: schemas.MonthlyInvoiceRequest, db: Session =
         month=payload.month, roomFee=contract.price or 0,
         total=(contract.price or 0) + calc.lines_total(lines),
         status="unpaid", createdDate=_today(),
+        code=gen_invoice_code(db, contract.roomId),
     )
     for ln in lines:
         inv.lines.append(models.InvoiceLine(**ln))
@@ -207,6 +278,7 @@ def update_invoice(invoice_id: str, payload: schemas.InvoiceUpdate, db: Session 
     if not inv:
         raise HTTPException(404, "Không tìm thấy hóa đơn")
     data = payload.model_dump(exclude_unset=True, exclude={"lines"})
+    want_status = data.pop("status", None)
     for key, value in data.items():
         setattr(inv, key, value)
     if payload.lines is not None:
@@ -215,6 +287,13 @@ def update_invoice(invoice_id: str, payload: schemas.InvoiceUpdate, db: Session 
         for ln in payload.lines:
             inv.lines.append(models.InvoiceLine(**ln.model_dump()))
         inv.total = (inv.roomFee or 0) + sum(l.amount or 0 for l in inv.lines)
+    # Tương thích ngược (SPEC-WEB mục 2): PUT status='paid' -> trả đủ;
+    # status='unpaid' -> chưa trả đồng nào; trạng thái cuối luôn SUY RA lại.
+    if want_status == "paid":
+        inv.paidAmount = max(0, (inv.total or 0) - (inv.discount or 0))
+    elif want_status == "unpaid":
+        inv.paidAmount = 0
+    sync_invoice_status(inv)
     db.commit()
     db.refresh(inv)
     return inv
@@ -228,6 +307,150 @@ def delete_invoice(invoice_id: str, db: Session = Depends(get_db)):
     db.delete(inv)
     db.commit()
     return {"ok": True, "id": invoice_id}
+
+
+# ================================================================
+# Thanh toán hóa đơn (SPEC-WEB mục 2/3.6): ghi payment -> cập nhật
+# paidAmount + trạng thái suy ra + TỰ TẠO 1 phiếu thu tương ứng
+# ================================================================
+@inv_router.get("/{invoice_id}/payments", response_model=List[schemas.InvoicePaymentOut])
+def list_invoice_payments(invoice_id: str, db: Session = Depends(get_db)):
+    inv = db.get(models.Invoice, invoice_id)
+    if not inv:
+        raise HTTPException(404, "Không tìm thấy hóa đơn")
+    return (db.query(models.InvoicePayment)
+            .filter(models.InvoicePayment.invoiceId == invoice_id)
+            .order_by(models.InvoicePayment.date, models.InvoicePayment.created_at).all())
+
+
+@inv_router.post("/{invoice_id}/payments", response_model=schemas.InvoicePaymentOut, status_code=201)
+def create_invoice_payment(invoice_id: str, payload: schemas.InvoicePaymentCreate,
+                           db: Session = Depends(get_db)):
+    inv = db.get(models.Invoice, invoice_id)
+    if not inv:
+        raise HTTPException(404, "Không tìm thấy hóa đơn")
+    if not payload.amount or payload.amount <= 0:
+        raise HTTPException(400, "Số tiền thanh toán phải lớn hơn 0")
+    pay_date = payload.date or _today()
+    payment = models.InvoicePayment(
+        invoiceId=inv.id, date=pay_date, amount=payload.amount,
+        receiver=payload.receiver or "", note=payload.note or "")
+    db.add(payment)
+    inv.paidAmount = (inv.paidAmount or 0) + payload.amount
+    sync_invoice_status(inv)
+    # Tự tạo phiếu thu tương ứng để chảy vào Tài chính/Thu + Phân tích
+    contract = _active_contract_for_room(db, inv.roomId)
+    payer = ""
+    if contract:
+        customer = db.get(models.Customer, contract.customerId)
+        payer = customer.name if customer else ""
+    db.add(models.Receipt(
+        code=gen_receipt_code(db, inv.roomId), houseId=inv.houseId, roomId=inv.roomId,
+        contractCode=(contract.code if contract else "") or "",
+        invoiceId=inv.id,
+        title=("Thanh toán hóa đơn " + (inv.code or inv.month or "")).strip(),
+        amount=payload.amount, createdDate=_today(), collectDate=pay_date,
+        collector=payload.receiver or "", payer=payer, note=payload.note or ""))
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.get("/invoice-payments", response_model=List[schemas.InvoicePaymentOut])
+def list_all_payments(db: Session = Depends(get_db)):
+    """Lịch sử thanh toán của MỌI hóa đơn (màn Lịch sử thanh toán riêng)."""
+    return (db.query(models.InvoicePayment)
+            .order_by(models.InvoicePayment.date.desc(),
+                      models.InvoicePayment.created_at.desc()).all())
+
+
+# ================================================================
+# Thông báo tổng hợp (SPEC-WEB mục 3.10)
+# ================================================================
+@router.get("/notifications")
+def notifications(db: Session = Depends(get_db)):
+    today = _today()
+    houses = {h.id: h for h in db.query(models.House).all()}
+    rooms = {r.id: r for r in db.query(models.Room).all()}
+
+    def house_label(hid):
+        h = houses.get(hid)
+        return (h.name or h.address) if h else ""
+
+    def room_label(rid):
+        r = rooms.get(rid)
+        return r.name if r else ""
+
+    items = []
+    # Sự cố chưa sửa xong
+    for inc in db.query(models.Incident).filter(models.Incident.status != "Đã sửa").all():
+        when = inc.date or (inc.created_at.date() if inc.created_at else today)
+        content = "%s, %s %s" % (inc.note or inc.type, room_label(inc.roomId),
+                                 house_label(inc.houseId))
+        items.append({"id": "incident-" + inc.id, "type": "incident",
+                      "time": when.isoformat(), "content": content.strip(),
+                      "refId": inc.id})
+    # Hợp đồng sắp hết hạn (<= 30 ngày, tính cả vừa hết hạn 30 ngày)
+    for c in db.query(models.Contract).filter(models.Contract.status == "active").all():
+        if c.endDate and today - timedelta(days=30) <= c.endDate <= today + timedelta(days=30):
+            content = "%s %s hết hợp đồng vào %s" % (
+                room_label(c.roomId), house_label(c.houseId),
+                c.endDate.strftime("%d/%m/%Y"))
+            items.append({"id": "contract-" + c.id, "type": "contract",
+                          "time": c.endDate.isoformat(), "content": content,
+                          "refId": c.id})
+    # Hóa đơn chưa thanh toán hết (quá hạn / chưa thanh toán)
+    for inv in db.query(models.Invoice).all():
+        if invoice_status(inv) == "paid":
+            continue
+        when = inv.createdDate or today
+        content = "Hóa đơn %s — %s %s chưa thanh toán, còn lại %sđ" % (
+            inv.code or (inv.month or ""), room_label(inv.roomId),
+            house_label(inv.houseId), "{:,}".format(invoice_remaining(inv)).replace(",", "."))
+        items.append({"id": "invoice-" + inv.id, "type": "invoice",
+                      "time": when.isoformat(), "content": content, "refId": inv.id})
+    # Cọc sắp hết hạn
+    for dep in db.query(models.Deposit).all():
+        if dep.expiryDate and today - timedelta(days=30) <= dep.expiryDate <= today + timedelta(days=30):
+            content = "Cọc phòng %s %s hết hạn vào %s" % (
+                room_label(dep.roomId), house_label(dep.houseId),
+                dep.expiryDate.strftime("%d/%m/%Y"))
+            items.append({"id": "deposit-" + dep.id, "type": "deposit",
+                          "time": dep.expiryDate.isoformat(), "content": content,
+                          "refId": dep.id})
+    items.sort(key=lambda x: x["time"], reverse=True)
+    return {"items": items, "total": len(items)}
+
+
+# ================================================================
+# Thanh toán điện nước của nhà (SPEC-WEB mục 3.2): đổi trạng thái
+# -> paid + tự tạo 1 phiếu chi tương ứng
+# ================================================================
+util_router = APIRouter(prefix="/house-utilities", tags=["house-utilities"], dependencies=_AUTH)
+
+
+@util_router.post("/{utility_id}/pay")
+def pay_house_utility(utility_id: str, db: Session = Depends(get_db)):
+    util = db.get(models.HouseUtility, utility_id)
+    if not util:
+        raise HTTPException(404, "Không tìm thấy bản ghi điện nước")
+    if util.status == "paid":
+        raise HTTPException(400, "Khoản này đã thanh toán rồi")
+    util.status = "paid"
+    house = db.get(models.House, util.houseId)
+    label = "điện" if util.type == "dien" else "nước"
+    house_label = (house.name or house.address) if house else ""
+    exp = models.Expense(
+        code=gen_expense_code(), houseId=util.houseId,
+        title="Thanh toán %s %s tháng %s" % (label, house_label, util.month),
+        amount=util.amount or 0, date=_today(), payDate=_today(),
+        note="Tự tạo khi thanh toán %s của nhà (mã %s)" % (label, util.customerCode or ""))
+    db.add(exp)
+    db.commit()
+    db.refresh(util)
+    db.refresh(exp)
+    return {"ok": True, "utility": schemas.HouseUtilityOut.model_validate(util),
+            "expenseId": exp.id, "expenseCode": exp.code}
 
 
 # ================================================================

@@ -38,3 +38,97 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ----------------------------------------------------------------
+# Migration nhẹ (SPEC-WEB mục 2): bổ sung cột mới vào DB ĐÃ TỒN TẠI
+# (vd bản đang chạy trên Render) mà không bắt người dùng xóa DB.
+# Ánh xạ: tên bảng -> {tên cột trong DB (snake_case): kiểu SQL khi ADD COLUMN}.
+# Bảng mới hoàn toàn (invoice_payments, receipts, positions,
+# staff_assignments, house_utilities) được create_all xử lý.
+# ----------------------------------------------------------------
+NEW_COLUMNS = {
+    "houses": {
+        "name": "VARCHAR DEFAULT ''",
+        "business_type": "VARCHAR DEFAULT ''",
+        "description": "TEXT DEFAULT ''",
+    },
+    "rooms": {
+        "kitchen": "VARCHAR DEFAULT 'Không có'",
+    },
+    "landlords": {
+        "dob": "DATE",
+        "gender": "VARCHAR DEFAULT ''",
+        "job": "VARCHAR DEFAULT ''",
+        "marital_status": "VARCHAR DEFAULT ''",
+        "email": "VARCHAR DEFAULT ''",
+        "id_card": "VARCHAR DEFAULT ''",
+        "permanent_address": "VARCHAR DEFAULT ''",
+    },
+    "accounts": {
+        "dob": "DATE",
+        "gender": "VARCHAR DEFAULT ''",
+        "job": "VARCHAR DEFAULT ''",
+        "marital_status": "VARCHAR DEFAULT ''",
+        "email": "VARCHAR DEFAULT ''",
+        "id_card": "VARCHAR DEFAULT ''",
+        "province": "VARCHAR DEFAULT ''",
+        "district": "VARCHAR DEFAULT ''",
+        "ward": "VARCHAR DEFAULT ''",
+        "permanent_address": "VARCHAR DEFAULT ''",
+    },
+    "deposits": {
+        "code": "VARCHAR DEFAULT ''",
+        "rent_price": "INTEGER DEFAULT 0",
+        "vacant_days": "INTEGER DEFAULT 0",
+        "move_in_date": "DATE",
+        "move_out_date": "DATE",
+        "contract_date": "DATE",
+        "expiry_date": "DATE",
+    },
+    "contracts": {
+        "code": "VARCHAR DEFAULT ''",
+    },
+    "invoices": {
+        "code": "VARCHAR DEFAULT ''",
+        "discount": "INTEGER DEFAULT 0",
+        "paid_amount": "INTEGER DEFAULT 0",
+    },
+    "expenses": {
+        "code": "VARCHAR DEFAULT ''",
+        "room_id": "VARCHAR",
+        "contract_code": "VARCHAR DEFAULT ''",
+        "pay_date": "DATE",
+        "spender": "VARCHAR DEFAULT ''",
+        "receiver_name": "VARCHAR DEFAULT ''",
+        "receiver_phone": "VARCHAR DEFAULT ''",
+    },
+    "landlord_contracts": {
+        "code": "VARCHAR DEFAULT ''",
+        "deposit": "INTEGER DEFAULT 0",
+        "status": "VARCHAR DEFAULT 'active'",
+    },
+}
+
+
+def ensure_columns(eng=None):
+    """Kiểm tra & ADD COLUMN cho các cột mới còn thiếu. Idempotent,
+    chạy được trên SQLite + PostgreSQL, lỗi chỉ được ghi nhận (không
+    làm sập app) để bản đang chạy không bị gián đoạn."""
+    from sqlalchemy import inspect, text
+
+    eng = eng or engine
+    try:
+        inspector = inspect(eng)
+        existing_tables = set(inspector.get_table_names())
+        with eng.begin() as conn:
+            for table, cols in NEW_COLUMNS.items():
+                if table not in existing_tables:
+                    continue
+                existing_cols = {c["name"] for c in inspector.get_columns(table)}
+                for col, ddl in cols.items():
+                    if col not in existing_cols:
+                        conn.execute(text(
+                            'ALTER TABLE "%s" ADD COLUMN "%s" %s' % (table, col, ddl)))
+    except Exception as exc:  # pragma: no cover - phòng vệ lúc khởi động
+        print("[ensure_columns] Bỏ qua lỗi migration nhẹ:", exc)

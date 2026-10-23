@@ -3,24 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quản lý nhà trọ</title>
+<title>Nhà Trọ Việt — Quản lý nhà trọ</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="phone">
-  <header id="appHeader">
-    <span class="back" id="btnBack" style="display:none" onclick="goBack()">&#8592;</span>
-    <span class="ttl" id="hdrTitle">Quản lý nhà trọ</span>
+<div id="appRoot" style="display:none">
+  <header class="topbar">
+    <div class="brand" onclick="go('dashboard')">&#127968; Nhà Trọ Việt</div>
+    <nav class="mainnav" id="mainNav">
+      <a data-nav="dashboard" onclick="go('dashboard')">Tổng quan</a>
+      <a data-nav="houses" onclick="go('houses')">Nhà trọ</a>
+      <a data-nav="rooms" onclick="go('rooms')">Phòng trọ</a>
+      <a data-nav="deposits" onclick="go('deposits')">Cọc Phòng</a>
+      <a data-nav="contracts" onclick="go('contracts')">Hợp Đồng</a>
+      <a data-nav="invoices" onclick="go('invoices')">Hóa Đơn</a>
+      <a data-nav="finance" onclick="go('finance')">Tài chính</a>
+      <a data-nav="services" onclick="go('services')">Dịch vụ</a>
+      <a data-nav="staff" onclick="go('staff')">Nhân Viên</a>
+      <a data-nav="notifications" onclick="go('notifications')">Thông báo</a>
+      <span class="dropdown">
+        <a data-nav="manage" onclick="toggleMenu(event)">Quản lý &#9662;</a>
+        <span class="dropdown-menu" id="manageMenu">
+          <a onclick="go('vehicles')">Xe</a>
+          <a onclick="go('assets')">Tài sản</a>
+          <a onclick="go('incidents')">Sự cố</a>
+          <a onclick="go('customers')">Khách thuê</a>
+          <a onclick="go('units')">Đơn vị tính</a>
+          <a onclick="go('settings')">Cài đặt</a>
+        </span>
+      </span>
+    </nav>
+    <div class="userbox">
+      <span id="userName"></span>
+      <button class="btn sm gray" onclick="doLogout()">Đăng xuất</button>
+    </div>
   </header>
-  <main id="app"><div class="loading">Đang tải dữ liệu...</div></main>
-  <nav class="tabs-bar" id="tabBar">
-    <a data-tab="home" onclick="goTab('home')"><span class="ic">&#127968;</span>Home</a>
-    <a data-tab="rooms" onclick="goTab('rooms')"><span class="ic">&#128682;</span>Phòng</a>
-    <a data-tab="invoices" onclick="goTab('invoices')"><span class="ic">&#129534;</span>Hóa đơn</a>
-    <a data-tab="incidents" onclick="goTab('incidents')"><span class="ic">&#9888;&#65038;</span>Sự cố</a>
-    <a data-tab="menu" onclick="goTab('menu')"><span class="ic">&#9776;</span>Menu</a>
-  </nav>
+  <main id="content"><div class="loading">Đang tải dữ liệu...</div></main>
 </div>
+<div id="loginRoot"></div>
+<div id="modalRoot"></div>
 <script src="app.js"></script>
 </body>
 </html>

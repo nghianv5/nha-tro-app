@@ -37,7 +37,9 @@ def ensure_auth_accounts(db):
 def seed_db(db, force=False):
     """Nạp dữ liệu mẫu. force=True: xóa toàn bộ dữ liệu hiện có trước."""
     if force:
-        for model in (models.InvoiceLine, models.Invoice, models.MeterReading,
+        for model in (models.InvoiceLine, models.InvoicePayment, models.Invoice,
+                      models.Receipt, models.HouseUtility, models.StaffAssignment,
+                      models.Position, models.MeterReading,
                       models.LandlordMeterReading, models.Contract, models.Deposit,
                       models.Incident, models.Expense, models.Vehicle, models.Asset,
                       models.Room, models.HousePayment, models.LandlordContract,
@@ -65,24 +67,34 @@ def seed_db(db, force=False):
 
     # Chủ nhà mẫu
     ll1 = models.Landlord(name="Trần Văn D", phone="0905123456", address="Đống Đa, Hà Nội")
-    db.add(ll1)
+    ll2 = models.Landlord(name="Lê Đại Phát", phone="0362200120", address="Đống Đa, Hà Nội",
+                          dob=_d(1992, 2, 1), gender="Nam", job="văn phòng",
+                          maritalStatus="Độc thân", email="phat@gmail.com",
+                          idCard="001092000999", permanentAddress="Lục Ngạn, Bắc Giang")
+    db.add_all([ll1, ll2])
     db.flush()
 
-    def add_house(address, province, district, ward, floors, area, bed, bath, typ, landlord=None):
+    def add_house(address, province, district, ward, floors, area, bed, bath, typ, landlord=None,
+                  name="", business=""):
         h = models.House(address=address, province=province, district=district, ward=ward,
                          floors=floors, floorArea=area, bedrooms=bed, bathrooms=bath,
-                         type=typ, landlordId=landlord.id if landlord else None)
+                         type=typ, landlordId=landlord.id if landlord else None,
+                         name=name, businessType=business)
         db.add(h)
         db.flush()
         return h
 
-    H1 = add_house("370 Bùi Xương Trạch", "Hà Nội", "Thanh Xuân", "Khương Đình", 5, 60, 10, 5, "own")
+    H1 = add_house("370 Bùi Xương Trạch", "Hà Nội", "Thanh Xuân", "Khương Đình", 5, 60, 10, 5, "own",
+                   name="Nhà Bùi Xương Trạch", business="Phòng trọ")
     H2 = add_house("70 Bùi Xương Trạch", "Hà Nội", "Thanh Xuân", "Khương Đình", 5, 60, 10, 5, "rented", ll1)
-    H3 = add_house("12 Xã Đàn", "Hà Nội", "Đống Đa", "Phương Liên", 4, 50, 8, 4, "own")
+    H3 = add_house("12 Xã Đàn", "Hà Nội", "Đống Đa", "Phương Liên", 4, 50, 8, 4, "own",
+                   name="Nhà Xã Đàn", business="Chung cư mini")
     add_house("143 Trương Định", "Hà Nội", "Hai Bà Trưng", "Trương Định", 4, 55, 8, 4, "own")
     add_house("15 Âu Cơ", "Hà Nội", "Tây Hồ", "Tứ Liên", 3, 45, 6, 3, "own")
     add_house("50 Hoàng Cầu", "Hà Nội", "Đống Đa", "Ô Chợ Dừa", 5, 70, 12, 6, "own")
     add_house("70 Khương Trung", "Hà Nội", "Thanh Xuân", "Khương Trung", 4, 52, 9, 4, "own")
+    H8 = add_house("372 Xã Đàn", "Hà Nội", "Đống Đa", "Phương Liên", 4, 65, 13, 5, "rented", ll2,
+                   name="Nhà Xã Đàn", business="Chung cư mini")
 
     def add_room(house, name, floor, area, typ, toilet, price, max_people):
         r = models.Room(houseId=house.id, name=name, floor=floor, area=area, type=typ,
@@ -101,6 +113,8 @@ def seed_db(db, force=False):
     add_room(H1, "Phòng 202", 2, 26, "Studio", "Vệ sinh riêng", 2800000, 2)
     add_room(H2, "Phòng 101", 1, 30, "Khép kín", "Khép kín", 3000000, 3)
     add_room(H3, "Phòng 101", 1, 32, "Khép kín", "Khép kín", 3500000, 3)
+    R8_101 = add_room(H8, "Phòng 101", 1, 30, "Chung cư mini", "Khép kín", 4500000, 3)
+    R8_201 = add_room(H8, "Phòng 201", 2, 30, "Chung cư mini", "Khép kín", 4500000, 3)
 
     # Khách hàng + hợp đồng
     K1 = models.Customer(name="Nguyễn Văn B", dob=_d(1992, 2, 1), phone="0362200801",
@@ -118,11 +132,11 @@ def seed_db(db, force=False):
                 "xeMay": {"count": 1, "fee": 30000},
                 "oTo": {"count": 0, "fee": 100000}, "xeDap": {"count": 0, "fee": 10000}}
 
-    db.add(models.Contract(houseId=H1.id, roomId=R101.id, customerId=K1.id,
+    db.add(models.Contract(houseId=H1.id, roomId=R101.id, customerId=K1.id, code="HD10120260201",
                            signDate=_d(2026, 2, 1), startDate=_d(2026, 2, 1), endDate=_d(2027, 1, 31),
                            price=3000000, deposit=3000000, people=3, payMonths=1,
                            payFromDay=1, payToDay=3, services=svc(), status="active"))
-    db.add(models.Contract(houseId=H1.id, roomId=R102.id, customerId=K2.id,
+    db.add(models.Contract(houseId=H1.id, roomId=R102.id, customerId=K2.id, code="HD10220260301",
                            signDate=_d(2026, 3, 1), startDate=_d(2026, 3, 1), endDate=_d(2027, 2, 28),
                            price=3000000, deposit=3000000, people=2, payMonths=1,
                            payFromDay=1, payToDay=5, services=svc(), status="active"))
@@ -131,18 +145,31 @@ def seed_db(db, force=False):
     db.add(models.MeterReading(houseId=H1.id, roomId=R101.id, type="dien", prev=20, current=30, date=_d(2026, 10, 5)))
     db.add(models.MeterReading(houseId=H1.id, roomId=R101.id, type="nuoc", prev=10, current=15, date=_d(2026, 10, 5)))
 
-    # Hóa đơn mẫu đã thanh toán — tổng 3.190.000đ đúng thiết kế
+    # Hóa đơn mẫu đã thanh toán — tổng 3.190.000đ đúng thiết kế (SPEC-WEB: có mã,
+    # paidAmount đầy đủ + 1 payment + 1 phiếu thu tương ứng)
     inv1 = models.Invoice(kind="monthly", houseId=H1.id, roomId=R101.id, month="2026-09",
-                          roomFee=3000000, total=3190000, status="paid", createdDate=_d(2026, 10, 1))
+                          code="10120261001090000",
+                          roomFee=3000000, total=3190000, discount=0, paidAmount=3190000,
+                          status="paid", createdDate=_d(2026, 10, 1))
     for label, up, unit, qty, prev, curr, amount in (
             ("Điện", 3000, "số", 10, 20, 30, 30000), ("Nước", 80000, "người", 1, None, None, 80000),
             ("Điện chung", 30000, "người", 1, None, None, 30000), ("Vệ sinh", 20000, "người", 1, None, None, 20000),
             ("Xe máy", 30000, "xe", 1, None, None, 30000)):
         inv1.lines.append(models.InvoiceLine(label=label, unitPrice=up, unit=unit, qty=qty,
                                              prev=prev, current=curr, amount=amount))
+    inv1.payments.append(models.InvoicePayment(date=_d(2026, 10, 2), amount=3190000,
+                                               receiver="Nguyễn Văn A", note="Thanh toán đủ"))
     db.add(inv1)
+    db.flush()
+    db.add(models.Receipt(code="T10120261002090000", houseId=H1.id, roomId=R101.id,
+                          contractCode="HD10120260201", invoiceId=inv1.id,
+                          title="Thanh toán hóa đơn 10120261001090000", amount=3190000,
+                          createdDate=_d(2026, 10, 2), collectDate=_d(2026, 10, 2),
+                          collector="Nguyễn Văn A", payer="Nguyễn Văn B"))
     inv2 = models.Invoice(kind="monthly", houseId=H1.id, roomId=R102.id, month="2026-10",
-                          roomFee=3000000, total=3260000, status="unpaid", createdDate=_d(2026, 10, 5))
+                          code="10220261005090000",
+                          roomFee=3000000, total=3260000, discount=0, paidAmount=0,
+                          status="unpaid", createdDate=_d(2026, 10, 5))
     for label, up, unit, qty, amount in (("Nước", 80000, "người", 2, 160000),
                                          ("Điện chung", 30000, "người", 2, 60000),
                                          ("Vệ sinh", 20000, "người", 2, 40000)):
@@ -158,23 +185,93 @@ def seed_db(db, force=False):
                            note="Mất điện cả phòng", status="Chưa sửa",
                            creator="Nguyễn Văn T", assignee="", date=_d(2026, 10, 18)))
     db.add(models.Deposit(houseId=H1.id, roomId=R201.id, customerName="Lê Thị E",
-                          phone="0912345678", amount=1000000, date=_d(2026, 10, 15), note="Cọc giữ phòng"))
+                          code="20120261015100000",
+                          phone="0912345678", amount=1000000, rentPrice=3200000, vacantDays=5,
+                          date=_d(2026, 10, 15), moveInDate=_d(2026, 11, 1),
+                          moveOutDate=_d(2027, 10, 31), contractDate=_d(2026, 10, 20),
+                          expiryDate=_d(2026, 11, 15), note="Cọc giữ phòng"))
     db.add(models.Expense(houseId=H1.id, title="Sửa ống nước tầng 1", amount=350000, date=_d(2026, 10, 10)))
+
+    # Phiếu thu + phiếu chi mẫu đúng ví dụ thiết kế web (372 Xã Đàn)
+    db.add(models.Receipt(code="T1012020091", houseId=H8.id, roomId=R8_101.id,
+                          contractCode="HD10120200915", invoiceId=None,
+                          title="Thu tiền phòng 101", amount=1000000,
+                          createdDate=_d(2020, 3, 19), collectDate=_d(2020, 4, 19),
+                          collector="Trần Văn Nam", payer="Nguyễn Văn Cường"))
+    db.add(models.Expense(houseId=H8.id, roomId=R8_201.id, contractCode="HD10120200915",
+                          code="CHI1012020091", title="Mua giường phòng 201", amount=1000000,
+                          date=_d(2020, 3, 19), payDate=_d(2020, 4, 19),
+                          spender="Trần Văn Nam", receiverName="Nguyễn Văn Cường",
+                          receiverPhone="0362200801"))
+
+    # Điện nước nhà mẫu: 372 Xã Đàn, mã điện, tháng hiện tại, chưa thanh toán
+    from datetime import date as _date_cls
+    db.add(models.HouseUtility(houseId=H8.id, type="dien", customerCode="10120200915",
+                               accountHolder="Nguyễn Văn An", username="PD131241514123",
+                               password="ePD131241514123",
+                               month=_date_cls.today().strftime("%Y-%m"),
+                               amount=3200000, status="unpaid"))
 
     # Hợp đồng chủ nhà + thanh toán tiền nhà mẫu
     db.add(models.LandlordContract(landlordId=ll1.id, houseId=H2.id, rentPrice=15000000,
+                                   code="HD7020260101", deposit=15000000, status="active",
                                    startDate=_d(2026, 1, 1), endDate=_d(2026, 12, 31), payDay=5))
+    db.add(models.LandlordContract(landlordId=ll2.id, houseId=H8.id, rentPrice=13000000,
+                                   code="HD2312414124", deposit=13000000, status="active",
+                                   startDate=_d(2026, 1, 1), endDate=_d(2026, 12, 31), payDay=1))
     db.add(models.HousePayment(houseId=H2.id, landlordId=ll1.id, amount=15000000,
                                date=_d(2026, 10, 5), status="paid"))
 
     # Tài khoản đăng nhập mẫu: admin (toàn quyền) + nhân viên (vài module)
     all_house_ids = [h.id for h in db.query(models.House).all()]
-    db.add(models.Account(name="Nguyễn Văn A", phone=ADMIN_PHONE, role="admin",
-                          passwordHash=hash_password(ADMIN_PASSWORD),
-                          houseIds=all_house_ids, modules=["all"]))
-    db.add(models.Account(name="Nguyễn Văn T", phone=STAFF_PHONE, role="staff",
-                          passwordHash=hash_password(STAFF_PASSWORD),
-                          houseIds=[H1.id], modules=["incidents", "meter", "invoices"]))
+    admin_acc = models.Account(name="Nguyễn Văn A", phone=ADMIN_PHONE, role="admin",
+                               passwordHash=hash_password(ADMIN_PASSWORD),
+                               houseIds=all_house_ids, modules=["all"])
+    staff_acc = models.Account(name="Nguyễn Văn T", phone=STAFF_PHONE, role="staff",
+                               passwordHash=hash_password(STAFF_PASSWORD),
+                               houseIds=[H1.id], modules=["incidents", "meter", "invoices"])
+    phat_acc = models.Account(name="Lê Đại Phát", phone="03622200801", role="staff",
+                              passwordHash=hash_password(STAFF_PASSWORD),
+                              houseIds=[H8.id], modules=["all"],
+                              dob=_d(1992, 2, 1), gender="Nam", job="văn phòng",
+                              maritalStatus="Độc thân", email="phat@gmail.com",
+                              idCard="001092000999", province="Hà Nội",
+                              district="Đống Đa", ward="Phương Liên",
+                              permanentAddress="Lục Ngạn, Bắc Giang")
+    db.add_all([admin_acc, staff_acc, phat_acc])
+    db.flush()
+
+    # Chức vụ + ma trận quyền mặc định (SPEC-WEB mục 2/3.9)
+    _mods = ("nha", "phong", "dichVu", "hopDong", "khachThue", "thuChi", "thongBao")
+
+    def _perms(thongke, full=False, none=False):
+        p = {"thongKe": thongke}
+        for m in _mods:
+            p[m] = {"add": full, "edit": full, "delete": full}
+        return p
+
+    positions = {}
+    for pname, perms in (
+            ("admin", _perms(True, full=True)),
+            ("Quản lý", _perms(True, full=True)),
+            ("Nhà đầu tư", _perms(True)),
+            ("Kỹ thuật", _perms(False)),
+            ("Bảo vệ", _perms(False)),
+            ("Vệ sinh", _perms(False))):
+        pos = models.Position(name=pname, permissions=perms)
+        # Kỹ thuật được quyền thông báo để nhận việc sửa chữa
+        if pname == "Kỹ thuật":
+            pos.permissions["thongBao"] = {"add": True, "edit": True, "delete": False}
+        db.add(pos)
+        db.flush()
+        positions[pname] = pos
+
+    # Phân chức vụ theo nhà mẫu: Lê Đại Phát — Quản lý @ 372 Xã Đàn;
+    # Nguyễn Văn T — Kỹ thuật @ 370 Bùi Xương Trạch
+    db.add(models.StaffAssignment(accountId=phat_acc.id, houseId=H8.id,
+                                  positionId=positions["Quản lý"].id))
+    db.add(models.StaffAssignment(accountId=staff_acc.id, houseId=H1.id,
+                                  positionId=positions["Kỹ thuật"].id))
     db.commit()
     return True
 

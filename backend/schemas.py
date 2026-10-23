@@ -15,6 +15,7 @@ class OutBase(BaseModel):
 # ---------- Nhà ----------
 class HouseCreate(BaseModel):
     address: str
+    name: Optional[str] = ""
     province: Optional[str] = ""
     district: Optional[str] = ""
     ward: Optional[str] = ""
@@ -23,11 +24,14 @@ class HouseCreate(BaseModel):
     bedrooms: Optional[int] = 0
     bathrooms: Optional[int] = 0
     type: Optional[str] = "own"
+    businessType: Optional[str] = ""
+    description: Optional[str] = ""
     landlordId: Optional[str] = None
 
 
 class HouseUpdate(BaseModel):
     address: Optional[str] = None
+    name: Optional[str] = None
     province: Optional[str] = None
     district: Optional[str] = None
     ward: Optional[str] = None
@@ -36,6 +40,8 @@ class HouseUpdate(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     type: Optional[str] = None
+    businessType: Optional[str] = None
+    description: Optional[str] = None
     landlordId: Optional[str] = None
 
 
@@ -51,6 +57,7 @@ class RoomCreate(BaseModel):
     area: Optional[int] = 0
     type: Optional[str] = "Khép kín"
     toilet: Optional[str] = "Khép kín"
+    kitchen: Optional[str] = "Không có"
     withOwner: Optional[bool] = False
     price: Optional[int] = 0
     minDeposit: Optional[int] = 0
@@ -69,6 +76,7 @@ class RoomUpdate(BaseModel):
     area: Optional[int] = None
     type: Optional[str] = None
     toilet: Optional[str] = None
+    kitchen: Optional[str] = None
     withOwner: Optional[bool] = None
     price: Optional[int] = None
     minDeposit: Optional[int] = None
@@ -112,6 +120,7 @@ class ContractCreate(BaseModel):
     houseId: str
     roomId: str
     customerId: str
+    code: Optional[str] = ""
     signDate: Optional[DateType] = None
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
@@ -129,6 +138,7 @@ class ContractUpdate(BaseModel):
     houseId: Optional[str] = None
     roomId: Optional[str] = None
     customerId: Optional[str] = None
+    code: Optional[str] = None
     signDate: Optional[DateType] = None
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
@@ -215,11 +225,14 @@ class InvoiceLineOut(OutBase, InvoiceLineIn):
 
 class InvoiceCreate(BaseModel):
     kind: str = "monthly"
+    code: Optional[str] = ""
     houseId: str
     roomId: Optional[str] = None
     month: Optional[str] = None
     roomFee: Optional[int] = 0
     total: Optional[int] = 0
+    discount: Optional[int] = 0
+    paidAmount: Optional[int] = 0
     status: Optional[str] = "unpaid"
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
@@ -228,11 +241,14 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceUpdate(BaseModel):
     kind: Optional[str] = None
+    code: Optional[str] = None
     houseId: Optional[str] = None
     roomId: Optional[str] = None
     month: Optional[str] = None
     roomFee: Optional[int] = None
     total: Optional[int] = None
+    discount: Optional[int] = None
+    paidAmount: Optional[int] = None
     status: Optional[str] = None
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
@@ -242,15 +258,35 @@ class InvoiceUpdate(BaseModel):
 class InvoiceOut(OutBase):
     id: str
     kind: str
+    code: Optional[str] = ""
     houseId: str
     roomId: Optional[str] = None
     month: Optional[str] = None
     roomFee: int = 0
     total: int = 0
-    status: str = "unpaid"
+    discount: int = 0
+    paidAmount: int = 0
+    status: str = "unpaid"  # SUY RA từ total/discount/paidAmount (đồng bộ ở backend)
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
     lines: List[InvoiceLineOut] = []
+
+
+class InvoicePaymentCreate(BaseModel):
+    """Ghi 1 lần thanh toán cho hóa đơn (SPEC-WEB)."""
+    date: Optional[DateType] = None
+    amount: int
+    receiver: Optional[str] = ""
+    note: Optional[str] = ""
+
+
+class InvoicePaymentOut(OutBase):
+    id: str
+    invoiceId: str
+    date: Optional[DateType] = None
+    amount: int = 0
+    receiver: Optional[str] = ""
+    note: Optional[str] = ""
 
 
 class MonthlyInvoiceRequest(BaseModel):
@@ -272,6 +308,41 @@ class LiquidateRequest(BaseModel):
     refundRoomFee: bool = False           # tick hoàn tiền phòng thừa
     prepaidRoomFee: int = 0               # số tiền phòng đã trả thừa
     confirm: bool = False                 # true = chốt thanh lý thật
+
+
+# ---------- Phiếu thu ----------
+class ReceiptCreate(BaseModel):
+    code: Optional[str] = ""
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    contractCode: Optional[str] = ""
+    invoiceId: Optional[str] = None
+    title: str = ""
+    amount: Optional[int] = 0
+    createdDate: Optional[DateType] = None
+    collectDate: Optional[DateType] = None
+    collector: Optional[str] = ""
+    payer: Optional[str] = ""
+    note: Optional[str] = ""
+
+
+class ReceiptUpdate(BaseModel):
+    code: Optional[str] = None
+    houseId: Optional[str] = None
+    roomId: Optional[str] = None
+    contractCode: Optional[str] = None
+    invoiceId: Optional[str] = None
+    title: Optional[str] = None
+    amount: Optional[int] = None
+    createdDate: Optional[DateType] = None
+    collectDate: Optional[DateType] = None
+    collector: Optional[str] = None
+    payer: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ReceiptOut(OutBase, ReceiptCreate):
+    id: str
 
 
 # ---------- Xe ----------
@@ -352,20 +423,34 @@ class ServiceOut(OutBase, ServiceCreate):
     id: str
 
 
-# ---------- Chi tiêu ----------
+# ---------- Chi tiêu / Phiếu chi ----------
 class ExpenseCreate(BaseModel):
     houseId: Optional[str] = None
+    code: Optional[str] = ""
+    roomId: Optional[str] = None
+    contractCode: Optional[str] = ""
     title: str = ""
     amount: Optional[int] = 0
     date: Optional[DateType] = None
+    payDate: Optional[DateType] = None
+    spender: Optional[str] = ""
+    receiverName: Optional[str] = ""
+    receiverPhone: Optional[str] = ""
     note: Optional[str] = ""
 
 
 class ExpenseUpdate(BaseModel):
     houseId: Optional[str] = None
+    code: Optional[str] = None
+    roomId: Optional[str] = None
+    contractCode: Optional[str] = None
     title: Optional[str] = None
     amount: Optional[int] = None
     date: Optional[DateType] = None
+    payDate: Optional[DateType] = None
+    spender: Optional[str] = None
+    receiverName: Optional[str] = None
+    receiverPhone: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -406,20 +491,34 @@ class IncidentOut(OutBase, IncidentCreate):
 class DepositCreate(BaseModel):
     houseId: str
     roomId: str
+    code: Optional[str] = ""
     customerName: Optional[str] = ""
     phone: Optional[str] = ""
     amount: Optional[int] = 0
+    rentPrice: Optional[int] = 0
+    vacantDays: Optional[int] = 0
     date: Optional[DateType] = None
+    moveInDate: Optional[DateType] = None
+    moveOutDate: Optional[DateType] = None
+    contractDate: Optional[DateType] = None
+    expiryDate: Optional[DateType] = None
     note: Optional[str] = ""
 
 
 class DepositUpdate(BaseModel):
     houseId: Optional[str] = None
     roomId: Optional[str] = None
+    code: Optional[str] = None
     customerName: Optional[str] = None
     phone: Optional[str] = None
     amount: Optional[int] = None
+    rentPrice: Optional[int] = None
+    vacantDays: Optional[int] = None
     date: Optional[DateType] = None
+    moveInDate: Optional[DateType] = None
+    moveOutDate: Optional[DateType] = None
+    contractDate: Optional[DateType] = None
+    expiryDate: Optional[DateType] = None
     note: Optional[str] = None
 
 
@@ -432,12 +531,26 @@ class LandlordCreate(BaseModel):
     name: str
     phone: Optional[str] = ""
     address: Optional[str] = ""
+    dob: Optional[DateType] = None
+    gender: Optional[str] = ""
+    job: Optional[str] = ""
+    maritalStatus: Optional[str] = ""
+    email: Optional[str] = ""
+    idCard: Optional[str] = ""
+    permanentAddress: Optional[str] = ""
 
 
 class LandlordUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    dob: Optional[DateType] = None
+    gender: Optional[str] = None
+    job: Optional[str] = None
+    maritalStatus: Optional[str] = None
+    email: Optional[str] = None
+    idCard: Optional[str] = None
+    permanentAddress: Optional[str] = None
 
 
 class LandlordOut(OutBase, LandlordCreate):
@@ -448,19 +561,25 @@ class LandlordOut(OutBase, LandlordCreate):
 class LandlordContractCreate(BaseModel):
     landlordId: str
     houseId: str
+    code: Optional[str] = ""
     rentPrice: Optional[int] = 0
+    deposit: Optional[int] = 0
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
     payDay: Optional[int] = 5
+    status: Optional[str] = "active"
 
 
 class LandlordContractUpdate(BaseModel):
     landlordId: Optional[str] = None
     houseId: Optional[str] = None
+    code: Optional[str] = None
     rentPrice: Optional[int] = None
+    deposit: Optional[int] = None
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
     payDay: Optional[int] = None
+    status: Optional[str] = None
 
 
 class LandlordContractOut(OutBase, LandlordContractCreate):
@@ -488,7 +607,7 @@ class HousePaymentOut(OutBase, HousePaymentCreate):
     id: str
 
 
-# ---------- Tài khoản / phân quyền ----------
+# ---------- Tài khoản / nhân viên ----------
 class AccountCreate(BaseModel):
     name: str
     phone: Optional[str] = ""
@@ -496,6 +615,16 @@ class AccountCreate(BaseModel):
     password: Optional[str] = None  # chỉ nhận vào khi tạo, server băm rồi lưu password_hash
     houseIds: Optional[List[str]] = []
     modules: Optional[List[str]] = []
+    dob: Optional[DateType] = None
+    gender: Optional[str] = ""
+    job: Optional[str] = ""
+    maritalStatus: Optional[str] = ""
+    email: Optional[str] = ""
+    idCard: Optional[str] = ""
+    province: Optional[str] = ""
+    district: Optional[str] = ""
+    ward: Optional[str] = ""
+    permanentAddress: Optional[str] = ""
 
 
 class AccountUpdate(BaseModel):
@@ -504,6 +633,16 @@ class AccountUpdate(BaseModel):
     role: Optional[str] = None
     houseIds: Optional[List[str]] = None
     modules: Optional[List[str]] = None
+    dob: Optional[DateType] = None
+    gender: Optional[str] = None
+    job: Optional[str] = None
+    maritalStatus: Optional[str] = None
+    email: Optional[str] = None
+    idCard: Optional[str] = None
+    province: Optional[str] = None
+    district: Optional[str] = None
+    ward: Optional[str] = None
+    permanentAddress: Optional[str] = None
 
 
 class AccountOut(OutBase):
@@ -514,6 +653,77 @@ class AccountOut(OutBase):
     role: Optional[str] = "staff"
     houseIds: Optional[List[str]] = []
     modules: Optional[List[str]] = []
+    dob: Optional[DateType] = None
+    gender: Optional[str] = ""
+    job: Optional[str] = ""
+    maritalStatus: Optional[str] = ""
+    email: Optional[str] = ""
+    idCard: Optional[str] = ""
+    province: Optional[str] = ""
+    district: Optional[str] = ""
+    ward: Optional[str] = ""
+    permanentAddress: Optional[str] = ""
+
+
+# ---------- Chức vụ ----------
+class PositionCreate(BaseModel):
+    name: str
+    permissions: Optional[dict] = {}
+
+
+class PositionUpdate(BaseModel):
+    name: Optional[str] = None
+    permissions: Optional[dict] = None
+
+
+class PositionOut(OutBase, PositionCreate):
+    id: str
+
+
+# ---------- Phân chức vụ theo nhà ----------
+class StaffAssignmentCreate(BaseModel):
+    accountId: str
+    houseId: str
+    positionId: str
+
+
+class StaffAssignmentUpdate(BaseModel):
+    accountId: Optional[str] = None
+    houseId: Optional[str] = None
+    positionId: Optional[str] = None
+
+
+class StaffAssignmentOut(OutBase, StaffAssignmentCreate):
+    id: str
+
+
+# ---------- Thanh toán điện nước của nhà ----------
+class HouseUtilityCreate(BaseModel):
+    houseId: str
+    type: str = "dien"
+    customerCode: Optional[str] = ""
+    accountHolder: Optional[str] = ""
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+    month: Optional[str] = ""
+    amount: Optional[int] = 0
+    status: Optional[str] = "unpaid"
+
+
+class HouseUtilityUpdate(BaseModel):
+    houseId: Optional[str] = None
+    type: Optional[str] = None
+    customerCode: Optional[str] = None
+    accountHolder: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    month: Optional[str] = None
+    amount: Optional[int] = None
+    status: Optional[str] = None
+
+
+class HouseUtilityOut(OutBase, HouseUtilityCreate):
+    id: str
 
 
 # ---------- Đăng nhập / xác thực ----------
@@ -545,3 +755,8 @@ class ChangePasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str
+
+
+class VerifyPasswordRequest(BaseModel):
+    """Xác thực lại mật khẩu của người đang đăng nhập (vd trước khi Xóa)."""
+    password: str

@@ -17,11 +17,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 
 FILTER_PARAMS = ["houseId", "roomId", "status", "kind", "type", "month",
-                 "customerId", "landlordId"]
+                 "customerId", "landlordId", "accountId", "positionId"]
 
 
 def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
-                     dependencies=None, write_dependencies=None, create_mapper=None):
+                     dependencies=None, write_dependencies=None, create_mapper=None,
+                     create_enrich=None):
+    """create_enrich(db, data): hook tùy chọn chạy TRƯỚC khi tạo bản ghi, có
+    quyền truy cập DB (vd tự sinh mã HĐ cọc/phiếu thu từ tên phòng)."""
     router = APIRouter(prefix=prefix, tags=[prefix.strip("/")],
                        dependencies=dependencies or [])
     write_deps = write_dependencies or []
@@ -37,11 +40,14 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
         month: Optional[str] = Query(None),
         customerId: Optional[str] = Query(None),
         landlordId: Optional[str] = Query(None),
+        accountId: Optional[str] = Query(None),
+        positionId: Optional[str] = Query(None),
     ):
         q = db.query(model)
         given = {"houseId": houseId, "roomId": roomId, "status": status,
                  "kind": kind, "type": type, "month": month,
-                 "customerId": customerId, "landlordId": landlordId}
+                 "customerId": customerId, "landlordId": landlordId,
+                 "accountId": accountId, "positionId": positionId}
         for key, value in given.items():
             if value is not None and hasattr(model, key):
                 q = q.filter(getattr(model, key) == value)
@@ -59,6 +65,8 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
         data = payload.model_dump(exclude_unset=True)
         if create_mapper is not None:
             data = create_mapper(data)
+        if create_enrich is not None:
+            create_enrich(db, data)
         obj = model(**data)
         db.add(obj)
         db.commit()

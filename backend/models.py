@@ -1,4 +1,4 @@
-"""SQLAlchemy models cho toàn bộ thực thể theo SPEC.
+"""SQLAlchemy models cho toàn bộ thực thể theo SPEC + SPEC-WEB.
 
 Quy ước: thuộc tính Python dùng camelCase (khớp JSON API), tên cột trong DB
 dùng snake_case. Các trường danh sách (tiện ích, dịch vụ HĐ, quyền...) lưu JSON.
@@ -26,6 +26,7 @@ class House(TimestampMixin, Base):
     __tablename__ = "houses"
     id = Column(String, primary_key=True, default=_uid)
     address = Column(String, nullable=False)
+    name = Column(String, default="")  # Tên nhà (SPEC-WEB)
     province = Column("province", String, default="")
     district = Column(String, default="")
     ward = Column(String, default="")
@@ -34,6 +35,8 @@ class House(TimestampMixin, Base):
     bedrooms = Column(Integer, default=0)
     bathrooms = Column(Integer, default=0)
     type = Column(String, default="own")  # own | rented
+    businessType = Column("business_type", String, default="")  # Homestay|Chung cư mini|Phòng đơn|Phòng trọ
+    description = Column(Text, default="")
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=True)
 
 
@@ -46,6 +49,7 @@ class Room(TimestampMixin, Base):
     area = Column(Integer, default=0)
     type = Column(String, default="Khép kín")
     toilet = Column(String, default="Khép kín")
+    kitchen = Column(String, default="Không có")  # Trong phòng|Bên ngoài|Chung|Không có (SPEC-WEB)
     withOwner = Column("with_owner", Boolean, default=False)
     price = Column(Integer, default=0)
     minDeposit = Column("min_deposit", Integer, default=0)
@@ -71,6 +75,7 @@ class Customer(TimestampMixin, Base):
 class Contract(TimestampMixin, Base):
     __tablename__ = "contracts"
     id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã HĐ: HD + phòng + YYYYMMDD ngày ký (SPEC-WEB)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=False, index=True)
     customerId = Column("customer_id", String, ForeignKey("customers.id"), nullable=False)
@@ -116,17 +121,24 @@ class LandlordMeterReading(TimestampMixin, Base):
 class Invoice(TimestampMixin, Base):
     __tablename__ = "invoices"
     id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã hóa đơn: phòng + YYYYMMDDHHmmss (SPEC-WEB)
     kind = Column(String, default="monthly")  # monthly | other
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=True, index=True)
     month = Column(String, nullable=True, index=True)  # 'YYYY-MM' với hóa đơn tháng
     roomFee = Column("room_fee", Integer, default=0)
     total = Column(Integer, default=0)
-    status = Column(String, default="unpaid")  # paid | unpaid
+    discount = Column(Integer, default=0)      # Giảm giá (SPEC-WEB)
+    paidAmount = Column("paid_amount", Integer, default=0)  # Đã trả (SPEC-WEB)
+    # status được ĐỒNG BỘ từ total/discount/paidAmount (xem business.invoice_status):
+    # paid (hết) | partial (thiếu) | unpaid (chưa thanh toán)
+    status = Column(String, default="unpaid")
     createdDate = Column("created_date", Date, nullable=True)
     reason = Column(String, nullable=True)
     lines = relationship("InvoiceLine", back_populates="invoice",
                          cascade="all, delete-orphan", order_by="InvoiceLine.created_at")
+    payments = relationship("InvoicePayment", back_populates="invoice",
+                            cascade="all, delete-orphan", order_by="InvoicePayment.created_at")
 
 
 class InvoiceLine(TimestampMixin, Base):
@@ -141,6 +153,36 @@ class InvoiceLine(TimestampMixin, Base):
     current = Column(Integer, nullable=True)
     amount = Column(Integer, default=0)
     invoice = relationship("Invoice", back_populates="lines")
+
+
+class InvoicePayment(TimestampMixin, Base):
+    """Lịch sử thanh toán của 1 hóa đơn (SPEC-WEB mục 2)."""
+    __tablename__ = "invoice_payments"
+    id = Column(String, primary_key=True, default=_uid)
+    invoiceId = Column("invoice_id", String, ForeignKey("invoices.id"), nullable=False, index=True)
+    date = Column(Date, nullable=True)
+    amount = Column(Integer, default=0)
+    receiver = Column(String, default="")  # Người nhận
+    note = Column(Text, default="")
+    invoice = relationship("Invoice", back_populates="payments")
+
+
+class Receipt(TimestampMixin, Base):
+    """Phiếu thu — màn Tài chính/Thu (SPEC-WEB mục 2)."""
+    __tablename__ = "receipts"
+    id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã phiếu thu: T + mã phòng/ngày
+    houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=True, index=True)
+    roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=True, index=True)
+    contractCode = Column("contract_code", String, default="")
+    invoiceId = Column("invoice_id", String, ForeignKey("invoices.id"), nullable=True)
+    title = Column(String, default="")  # Khoản thu
+    amount = Column(Integer, default=0)
+    createdDate = Column("created_date", Date, nullable=True)  # Ngày tạo
+    collectDate = Column("collect_date", Date, nullable=True)  # Ngày thu
+    collector = Column(String, default="")  # Người thu
+    payer = Column(String, default="")      # Người nộp
+    note = Column(Text, default="")
 
 
 class Vehicle(TimestampMixin, Base):
@@ -183,10 +225,17 @@ class Service(TimestampMixin, Base):
 class Expense(TimestampMixin, Base):
     __tablename__ = "expenses"
     id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã phiếu chi: CHI + ... (SPEC-WEB)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=True, index=True)
+    roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=True, index=True)
+    contractCode = Column("contract_code", String, default="")
     title = Column(String, default="")
     amount = Column(Integer, default=0)
-    date = Column(Date, nullable=True)
+    date = Column(Date, nullable=True)      # Ngày tạo
+    payDate = Column("pay_date", Date, nullable=True)  # Ngày chi (SPEC-WEB)
+    spender = Column(String, default="")        # Người chi
+    receiverName = Column("receiver_name", String, default="")  # Người nhận
+    receiverPhone = Column("receiver_phone", String, default="")  # SĐT người nhận
     note = Column(Text, default="")
 
 
@@ -207,12 +256,19 @@ class Incident(TimestampMixin, Base):
 class Deposit(TimestampMixin, Base):
     __tablename__ = "deposits"
     id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã HĐ cọc: phòng + YYYYMMDDHHmmss (SPEC-WEB)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=False, index=True)
     customerName = Column("customer_name", String, default="")
     phone = Column(String, default="")
-    amount = Column(Integer, default=0)
-    date = Column(Date, nullable=True)
+    amount = Column(Integer, default=0)  # Tiền giữ phòng
+    rentPrice = Column("rent_price", Integer, default=0)  # Giá thuê
+    vacantDays = Column("vacant_days", Integer, default=0)  # Thời gian trống phòng (ngày)
+    date = Column(Date, nullable=True)  # Ngày cọc
+    moveInDate = Column("move_in_date", Date, nullable=True)   # Ngày vào
+    moveOutDate = Column("move_out_date", Date, nullable=True)  # Ngày ra
+    contractDate = Column("contract_date", Date, nullable=True)  # Ngày đến làm hợp đồng
+    expiryDate = Column("expiry_date", Date, nullable=True)      # Ngày hết hạn cọc
     note = Column(Text, default="")
 
 
@@ -222,17 +278,28 @@ class Landlord(TimestampMixin, Base):
     name = Column(String, nullable=False)
     phone = Column(String, default="")
     address = Column(String, default="")
+    # Hồ sơ đầy đủ theo SPEC-WEB
+    dob = Column(Date, nullable=True)
+    gender = Column(String, default="")
+    job = Column(String, default="")
+    maritalStatus = Column("marital_status", String, default="")
+    email = Column(String, default="")
+    idCard = Column("id_card", String, default="")
+    permanentAddress = Column("permanent_address", String, default="")
 
 
 class LandlordContract(TimestampMixin, Base):
     __tablename__ = "landlord_contracts"
     id = Column(String, primary_key=True, default=_uid)
+    code = Column(String, default="")  # Mã HĐ chủ nhà
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=False, index=True)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     rentPrice = Column("rent_price", Integer, default=0)
+    deposit = Column(Integer, default=0)
     startDate = Column("start_date", Date, nullable=True)
     endDate = Column("end_date", Date, nullable=True)
     payDay = Column("pay_day", Integer, default=5)
+    status = Column(String, default="active")  # active | liquidated (SPEC-WEB)
 
 
 class HousePayment(TimestampMixin, Base):
@@ -250,7 +317,55 @@ class Account(TimestampMixin, Base):
     id = Column(String, primary_key=True, default=_uid)
     name = Column(String, nullable=False)
     phone = Column(String, default="")
-    role = Column(String, default="staff")  # admin | staff (trước đây: Quản lý / Nhân viên...)
+    role = Column(String, default="staff")  # admin | staff (đăng nhập/phân quyền API)
     passwordHash = Column("password_hash", String, nullable=True)  # bcrypt, NULL = chưa đặt mật khẩu
     houseIds = Column("house_ids", JSON, default=list)
     modules = Column(JSON, default=list)
+    # Hồ sơ nhân viên đầy đủ theo SPEC-WEB
+    dob = Column(Date, nullable=True)
+    gender = Column(String, default="")
+    job = Column(String, default="")
+    maritalStatus = Column("marital_status", String, default="")
+    email = Column(String, default="")
+    idCard = Column("id_card", String, default="")
+    province = Column(String, default="")
+    district = Column(String, default="")
+    ward = Column(String, default="")
+    permanentAddress = Column("permanent_address", String, default="")
+
+
+class Position(TimestampMixin, Base):
+    """Chức vụ + ma trận quyền (SPEC-WEB mục 2/3.9).
+
+    permissions dạng: {"thongKe": true, "nha": {"add":bool,"edit":bool,"delete":bool},
+    "phong": {...}, "dichVu": {...}, "hopDong": {...}, "khachThue": {...},
+    "thuChi": {...}, "thongBao": {...}}
+    """
+    __tablename__ = "positions"
+    id = Column(String, primary_key=True, default=_uid)
+    name = Column(String, nullable=False)
+    permissions = Column(JSON, default=dict)
+
+
+class StaffAssignment(TimestampMixin, Base):
+    """Phân chức vụ theo nhà (SPEC-WEB mục 2)."""
+    __tablename__ = "staff_assignments"
+    id = Column(String, primary_key=True, default=_uid)
+    accountId = Column("account_id", String, ForeignKey("accounts.id"), nullable=False, index=True)
+    houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
+    positionId = Column("position_id", String, ForeignKey("positions.id"), nullable=False, index=True)
+
+
+class HouseUtility(TimestampMixin, Base):
+    """Thanh toán điện/nước của NHÀ với nhà cung cấp (SPEC-WEB mục 2/3.2)."""
+    __tablename__ = "house_utilities"
+    id = Column(String, primary_key=True, default=_uid)
+    houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
+    type = Column(String, default="dien")  # dien | nuoc
+    customerCode = Column("customer_code", String, default="")  # Mã điện / Mã nước
+    accountHolder = Column("account_holder", String, default="")  # Chủ tài khoản
+    username = Column(String, default="")   # Tài khoản đăng nhập cổng thanh toán
+    password = Column(String, default="")   # Mật khẩu (theo đúng thiết kế: lưu & hiển thị)
+    month = Column(String, default="")      # 'YYYY-MM'
+    amount = Column(Integer, default=0)     # Tiền thanh toán
+    status = Column(String, default="unpaid")  # unpaid | paid

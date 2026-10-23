@@ -37,6 +37,16 @@ def me(user: models.Account = Depends(get_current_user)):
     return user
 
 
+@router.post("/auth/verify-password")
+def verify_current_password(payload: schemas.VerifyPasswordRequest,
+                            user: models.Account = Depends(get_current_user)):
+    """Xác thực lại mật khẩu của người đang đăng nhập — dùng trước các thao
+    tác nhạy cảm ở UI (vd Xóa). Đúng -> 200 {"ok": true}; sai -> 401."""
+    if not verify_password(payload.password, user.passwordHash):
+        raise HTTPException(401, "Mật khẩu không đúng. Vui lòng kiểm tra lại.")
+    return {"ok": True}
+
+
 @router.post("/auth/change-password")
 def change_password(payload: schemas.ChangePasswordRequest,
                     user: models.Account = Depends(get_current_user),
