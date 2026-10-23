@@ -150,7 +150,8 @@ def seed_db(db, force=False):
     inv1 = models.Invoice(kind="monthly", houseId=H1.id, roomId=R101.id, month="2026-09",
                           code="10120261001090000",
                           roomFee=3000000, total=3190000, discount=0, paidAmount=3190000,
-                          status="paid", createdDate=_d(2026, 10, 1))
+                          status="paid", sent=True, sentDate=_d(2026, 10, 2),
+                          createdDate=_d(2026, 10, 1))
     for label, up, unit, qty, prev, curr, amount in (
             ("Điện", 3000, "số", 10, 20, 30, 30000), ("Nước", 80000, "người", 1, None, None, 80000),
             ("Điện chung", 30000, "người", 1, None, None, 30000), ("Vệ sinh", 20000, "người", 1, None, None, 20000),

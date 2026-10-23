@@ -25,6 +25,7 @@ class HouseCreate(BaseModel):
     bathrooms: Optional[int] = 0
     type: Optional[str] = "own"
     businessType: Optional[str] = ""
+    rentalMode: Optional[str] = "Bao phòng"
     description: Optional[str] = ""
     landlordId: Optional[str] = None
 
@@ -41,6 +42,7 @@ class HouseUpdate(BaseModel):
     bathrooms: Optional[int] = None
     type: Optional[str] = None
     businessType: Optional[str] = None
+    rentalMode: Optional[str] = None
     description: Optional[str] = None
     landlordId: Optional[str] = None
 
@@ -62,6 +64,7 @@ class RoomCreate(BaseModel):
     price: Optional[int] = 0
     minDeposit: Optional[int] = 0
     maxPeople: Optional[int] = 0
+    subRooms: Optional[int] = 0
     payMonths: Optional[int] = 1
     payFromDay: Optional[int] = 1
     payToDay: Optional[int] = 3
@@ -81,6 +84,7 @@ class RoomUpdate(BaseModel):
     price: Optional[int] = None
     minDeposit: Optional[int] = None
     maxPeople: Optional[int] = None
+    subRooms: Optional[int] = None
     payMonths: Optional[int] = None
     payFromDay: Optional[int] = None
     payToDay: Optional[int] = None
@@ -100,6 +104,11 @@ class CustomerCreate(BaseModel):
     gender: Optional[str] = "Nam"
     email: Optional[str] = ""
     idCard: Optional[str] = ""
+    job: Optional[str] = ""
+    maritalStatus: Optional[str] = ""
+    permanentAddress: Optional[str] = ""
+    currentAddress: Optional[str] = ""
+    note: Optional[str] = ""
 
 
 class CustomerUpdate(BaseModel):
@@ -109,6 +118,11 @@ class CustomerUpdate(BaseModel):
     gender: Optional[str] = None
     email: Optional[str] = None
     idCard: Optional[str] = None
+    job: Optional[str] = None
+    maritalStatus: Optional[str] = None
+    permanentAddress: Optional[str] = None
+    currentAddress: Optional[str] = None
+    note: Optional[str] = None
 
 
 class CustomerOut(OutBase, CustomerCreate):
@@ -234,6 +248,8 @@ class InvoiceCreate(BaseModel):
     discount: Optional[int] = 0
     paidAmount: Optional[int] = 0
     status: Optional[str] = "unpaid"
+    sent: Optional[bool] = False
+    sentDate: Optional[DateType] = None
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
     lines: Optional[List[InvoiceLineIn]] = []
@@ -250,6 +266,8 @@ class InvoiceUpdate(BaseModel):
     discount: Optional[int] = None
     paidAmount: Optional[int] = None
     status: Optional[str] = None
+    sent: Optional[bool] = None
+    sentDate: Optional[DateType] = None
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
     lines: Optional[List[InvoiceLineIn]] = None
@@ -267,6 +285,8 @@ class InvoiceOut(OutBase):
     discount: int = 0
     paidAmount: int = 0
     status: str = "unpaid"  # SUY RA từ total/discount/paidAmount (đồng bộ ở backend)
+    sent: bool = False      # Đã gửi cho khách chưa (SPEC-WEB-2 F)
+    sentDate: Optional[DateType] = None
     createdDate: Optional[DateType] = None
     reason: Optional[str] = None
     lines: List[InvoiceLineOut] = []
@@ -298,6 +318,16 @@ class MonthlyInvoiceRequest(BaseModel):
     dienCurr: Optional[int] = None
     nuocPrev: Optional[int] = None
     nuocCurr: Optional[int] = None
+
+
+class MonthlyBatchRequest(BaseModel):
+    """Tạo hóa đơn tháng cho MỌI phòng có HĐ active (SPEC-WEB-2 F)."""
+    month: str  # 'YYYY-MM'
+
+
+class MarkSentRequest(BaseModel):
+    """Đánh dấu đã gửi cho danh sách hóa đơn (SPEC-WEB-2 F)."""
+    invoiceIds: List[str] = []
 
 
 class LiquidateRequest(BaseModel):
@@ -377,16 +407,20 @@ class AssetCreate(BaseModel):
     houseId: str
     roomId: Optional[str] = None
     code: Optional[str] = ""
+    ownerType: Optional[str] = "room"
     type: str = ""
     status: Optional[str] = "Tốt"
+    note: Optional[str] = ""
 
 
 class AssetUpdate(BaseModel):
     houseId: Optional[str] = None
     roomId: Optional[str] = None
     code: Optional[str] = None
+    ownerType: Optional[str] = None
     type: Optional[str] = None
     status: Optional[str] = None
+    note: Optional[str] = None
 
 
 class AssetOut(OutBase, AssetCreate):
@@ -492,11 +526,16 @@ class DepositCreate(BaseModel):
     houseId: str
     roomId: str
     code: Optional[str] = ""
+    customerId: Optional[str] = None
     customerName: Optional[str] = ""
     phone: Optional[str] = ""
     amount: Optional[int] = 0
     rentPrice: Optional[int] = 0
     vacantDays: Optional[int] = 0
+    payMonths: Optional[int] = 1
+    payDayFrom: Optional[int] = 1
+    payDayTo: Optional[int] = 3
+    serviceConfig: Optional[dict] = {}
     date: Optional[DateType] = None
     moveInDate: Optional[DateType] = None
     moveOutDate: Optional[DateType] = None
@@ -509,11 +548,16 @@ class DepositUpdate(BaseModel):
     houseId: Optional[str] = None
     roomId: Optional[str] = None
     code: Optional[str] = None
+    customerId: Optional[str] = None
     customerName: Optional[str] = None
     phone: Optional[str] = None
     amount: Optional[int] = None
     rentPrice: Optional[int] = None
     vacantDays: Optional[int] = None
+    payMonths: Optional[int] = None
+    payDayFrom: Optional[int] = None
+    payDayTo: Optional[int] = None
+    serviceConfig: Optional[dict] = None
     date: Optional[DateType] = None
     moveInDate: Optional[DateType] = None
     moveOutDate: Optional[DateType] = None
@@ -567,6 +611,9 @@ class LandlordContractCreate(BaseModel):
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
     payDay: Optional[int] = 5
+    payMonths: Optional[int] = 1
+    payFromDay: Optional[int] = 1
+    payToDay: Optional[int] = 3
     status: Optional[str] = "active"
 
 
@@ -579,6 +626,9 @@ class LandlordContractUpdate(BaseModel):
     startDate: Optional[DateType] = None
     endDate: Optional[DateType] = None
     payDay: Optional[int] = None
+    payMonths: Optional[int] = None
+    payFromDay: Optional[int] = None
+    payToDay: Optional[int] = None
     status: Optional[str] = None
 
 

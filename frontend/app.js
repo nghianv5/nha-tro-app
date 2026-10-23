@@ -106,6 +106,36 @@ function statusBadge(st){ if(st==='rented') return '<span class="badge b-rented"
 function invStatus(inv){ var rem=(inv.total||0)-(inv.discount||0)-(inv.paidAmount||0); if(rem<=0) return 'paid'; if((inv.paidAmount||0)>0) return 'partial'; return 'unpaid'; }
 function invStatusLabel(st){ return st==='paid' ? 'Thanh toán hết' : (st==='partial' ? 'Thanh toán thiếu' : 'Chưa thanh toán'); }
 function invBadge(inv){ var st=invStatus(inv); return '<span class="badge '+(st==='paid'?'b-paid':st==='partial'?'b-partial':'b-unpaid')+'">'+invStatusLabel(st)+'</span>'; }
+function sentBadge(inv){ return inv && inv.sent ? '<span class="badge b-paid">Đã gửi</span>' : '<span class="badge b-unpaid">Chưa gửi</span>'; }
+function fmtDT(iso){
+  if(!iso) return '';
+  var s = String(iso).replace('T',' '), parts = s.split(' '), d = parts[0].split('-'), t = (parts[1]||'').slice(0,5);
+  if(d.length === 3) return d[0] + '/' + Number(d[1]) + '/' + Number(d[2]) + (t ? ' ' + t : '');
+  return iso;
+}
+/* ----- Hồ sơ khách đầy đủ (dùng lại ở form HĐ, form cọc, form khách) ----- */
+function custFieldsHtml(p, c){
+  c = c || {};
+  return '<div class="fgrid">' +
+    fld('Họ tên', inp(p+'_name', c.name||''), true) +
+    fld('Ngày sinh', inp(p+'_dob', c.dob||'', 'date')) +
+    fld('Địa chỉ thường trú', inp(p+'_perm', c.permanentAddress||'')) +
+    fld('SDT', inp(p+'_phone', c.phone||''), true) +
+    fld('Giới tính', sel(p+'_gender', ['Nam','Nữ','Khác'], c.gender||'Nam')) +
+    fld('Nghề nghiệp', inp(p+'_job', c.job||'')) +
+    fld('Tình trạng hôn nhân', inp(p+'_marital', c.maritalStatus||'')) +
+    fld('Mail', inp(p+'_email', c.email||'')) +
+    fld('CMND/CCCD', inp(p+'_idcard', c.idCard||'')) +
+    fld('Địa chỉ hiện tại', inp(p+'_curr', c.currentAddress||'')) +
+    fld('Ghi chú', inp(p+'_note', c.note||'')) +
+    '</div>';
+}
+function collectCust(p){
+  return { name: val(p+'_name'), dob: val(p+'_dob') || null, phone: val(p+'_phone'),
+    gender: val(p+'_gender'), email: val(p+'_email'), idCard: val(p+'_idcard'),
+    job: val(p+'_job'), maritalStatus: val(p+'_marital'),
+    permanentAddress: val(p+'_perm'), currentAddress: val(p+'_curr'), note: val(p+'_note') };
+}
 function lastReading(roomId, type){
   var list = db.meterReadings.filter(function(m){ return m.roomId===roomId && m.type===type; });
   list.sort(function(a,b){ return (a.date||'') < (b.date||'') ? -1 : 1; });
@@ -123,7 +153,7 @@ function nextPayDate(lc){
 var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', houseUtilities:'houses', utilityForm:'houses',
   rooms:'rooms', roomForm:'rooms', roomDetail:'rooms', deposits:'deposits', depositForm:'deposits',
   contracts:'contracts', contractForm:'contracts', contractDetail:'contracts', liquidate:'contracts', landlordContractForm:'contracts', landlordForm:'contracts',
-  invoices:'invoices', invoiceDetail:'invoices', monthlyForm:'invoices', otherForm:'invoices', invoiceEdit:'invoices', invoicePrint:'invoices', paymentsAll:'invoices',
+  invoices:'invoices', invoiceDetail:'invoices', monthlyForm:'invoices', otherForm:'invoices', specialInvoices:'invoices', invoiceEdit:'invoices', invoicePrint:'invoices', paymentsAll:'invoices',
   finance:'finance', receiptForm:'finance', expenseForm:'finance', services:'services', serviceForm:'services',
   staff:'staff', staffForm:'staff', notifications:'notifications',
   vehicles:'manage', vehicleForm:'manage', assets:'manage', assetForm:'manage', incidents:'manage', incidentForm:'manage',
@@ -228,7 +258,7 @@ function viewDashboard(){
     h += '<h3 class="sec">Thông báo mới nhất</h3>';
     var items = (notif.items || []).slice(0,5);
     h += items.length ? items.map(function(n){
-      return '<div class="notif-item"><div class="time">'+esc(n.time)+'</div><div>'+esc(n.content)+'</div></div>';
+      return '<div class="notif-item"><div class="time">'+esc(fmtDT(n.time))+'</div><div>'+esc(n.content)+'</div></div>';
     }).join('') : '<div class="empty-note">Chưa có thông báo</div>';
     h += '<div class="btnrow"><button class="btn sm" onclick="go(\'notifications\')">Xem tất cả thông báo</button></div>';
     setContent(h);
@@ -277,12 +307,14 @@ function viewHouses(){
     if(f.endto && (!lc || !lc.endDate || lc.endDate > f.endto)) return false;
     return true;
   });
-  h += tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà','Ngày TT tiếp theo','Ngày kết thúc HĐ',''], list.map(function(hs, i){
+  h += tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà','Số phòng','Số phòng trống','Ngày TT tiếp theo','Ngày kết thúc HĐ',''], list.map(function(hs, i){
     var lc = landlordContractOf(hs.id);
     var ll = lc ? byId(db.landlords, lc.landlordId) : (hs.landlordId ? byId(db.landlords, hs.landlordId) : null);
+    var hrooms = db.rooms.filter(function(r){ return r.houseId === hs.id; });
+    var emptyCount = hrooms.filter(function(r){ return roomStatus(r) === 'empty'; }).length;
     return '<tr><td>'+(i+1)+'</td><td><b>'+esc(hs.name || hs.address)+'</b></td><td>'+esc(hs.address)+'</td>' +
       '<td>'+esc(ll ? ll.name : '')+'</td><td>'+esc(ll ? ll.phone : '')+'</td><td>'+esc(lc ? (lc.code||'') : '')+'</td>' +
-      '<td class="price">'+(lc ? fmt(lc.rentPrice) : '')+'</td><td>'+fmtDate(nextPayDate(lc))+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
+      '<td class="price">'+(lc ? fmt(lc.rentPrice) : '')+'</td><td>'+hrooms.length+'</td><td>'+emptyCount+'</td><td>'+fmtDate(nextPayDate(lc))+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa</button>' +
       '<button class="linkbtn red" onclick="delBtn(\'Nhà '+esc(hs.name || hs.address)+'\',\'houses\',\''+hs.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có nhà nào');
@@ -294,51 +326,99 @@ function applyHouseFilter(){
     soonend: isChk('hf_soonend'), endfrom: val('hf_endfrom'), endto: val('hf_endto') };
   viewHouses();
 }
+var HOUSE_BUSINESS_TYPES = ['Chung cư mini','Nhà nguyên căn','Homestay','Phòng đơn','Phòng trọ'];
+var ASSET_STATUSES = ['Mới','Như mới','Cũ','Hỏng','Mất','Tốt'];
+function switchHouseTab(i){
+  for(var k=0;k<4;k++){
+    var sec = document.getElementById('htab_'+k), btn = document.getElementById('htabbtn_'+k);
+    if(sec) sec.style.display = k===i ? '' : 'none';
+    if(btn) btn.className = 'tab' + (k===i ? ' on' : '');
+  }
+}
+function addHouseAssetRow(type, status, note){
+  var i = window._haCount = (window._haCount || 0) + 1;
+  var wrap = document.getElementById('ha_rows'); if(!wrap) return;
+  var div = document.createElement('div');
+  div.className = 'fgrid'; div.id = 'ha_row_' + i;
+  div.innerHTML = '<div>'+fld('Loại tài sản', inp('ha_type_'+i, type||''))+'</div>' +
+    '<div>'+fld('Trạng thái', sel('ha_status_'+i, ASSET_STATUSES, status||'Tốt'))+'</div>' +
+    '<div>'+fld('Note', inp('ha_note_'+i, note||''))+'</div>' +
+    '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm red" onclick="document.getElementById(\'ha_row_'+i+'\').remove()">Xóa dòng</button></div>';
+  wrap.appendChild(div);
+}
 function viewHouseForm(p){
   var hs = p.id ? byId(db.houses, p.id) : null;
   var lc = hs ? landlordContractOf(hs.id) : null;
   var ll = lc ? byId(db.landlords, lc.landlordId) : (hs && hs.landlordId ? byId(db.landlords, hs.landlordId) : null);
   var desc = hs ? (hs.description||'') : '', mapNote = '';
   if(desc.indexOf('Vị trí bản đồ: ') === 0){ var parts = desc.split('\n'); mapNote = parts[0].slice('Vị trí bản đồ: '.length); desc = parts.slice(1).join('\n'); }
+  var huDien = null, huNuoc = null;
+  if(hs) db.houseUtilities.forEach(function(u){ if(u.houseId === hs.id){ if(u.type==='dien' && !huDien) huDien = u; if(u.type==='nuoc' && !huNuoc) huNuoc = u; } });
+  var llAssets = hs ? db.assets.filter(function(a){ return a.houseId === hs.id && a.ownerType === 'landlord'; }) : [];
   var h = pageTitle(hs ? 'Sửa nhà' : 'Thêm nhà');
+  h += '<div class="tabs">' + ['Thông tin nhà','Chủ nhà','Hợp Đồng','Tài sản chủ nhà'].map(function(t, i){
+    return '<span class="tab'+(i===0?' on':'')+'" id="htabbtn_'+i+'" onclick="switchHouseTab('+i+')">'+t+'</span>'; }).join('') + '</div>';
   h += '<form class="form-card" onsubmit="event.preventDefault();saveHouse(\''+(hs?hs.id:'')+'\')">' +
-    '<div class="form-sec"><h3 class="sec" style="margin-top:0">Thông Tin Nhà</h3><div class="fgrid">' +
+    /* --- Tab 1: Thông tin nhà --- */
+    '<div id="htab_0"><div class="fgrid">' +
     fld('Tỉnh / TP', inp('h_province', hs?hs.province:'Hà Nội'), true) +
     fld('Quận / Huyện', inp('h_district', hs?hs.district:''), true) +
     fld('Phường / Xã', inp('h_ward', hs?hs.ward:''), true) +
     fld('Địa chỉ', inp('h_address', hs?hs.address:''), true) +
     fld('Tên nhà', inp('h_name', hs?hs.name:'')) +
     fld('Vị trí trên bản đồ (ghi chú)', inp('h_map', mapNote)) +
+    fld('Loại nhà trọ / Loại hình kinh doanh', sel('h_business', HOUSE_BUSINESS_TYPES, hs?hs.businessType:'Phòng trọ'), true) +
+    fld('Hình thức cho thuê', sel('h_rentalmode', ['Bao phòng','Bao người'], hs?hs.rentalMode:'Bao phòng')) +
+    fld('Loại nhà', sel('h_type', [['own','Nhà của mình'],['rented','Nhà thuê']], hs?hs.type:'own')) +
     fld('Diện tích sàn (m2)', inp('h_area', hs?hs.floorArea:0, 'number'), true) +
     fld('Số tầng', inp('h_floors', hs?hs.floors:1, 'number'), true) +
-    fld('Số phòng ngủ', inp('h_bedrooms', hs?hs.bedrooms:0, 'number')) +
+    fld('Số phòng ngủ', inp('h_bedrooms', hs?hs.bedrooms:0, 'number'), true) +
     fld('Số nhà vệ sinh', inp('h_bathrooms', hs?hs.bathrooms:0, 'number'), true) +
-    fld('Loại nhà', sel('h_type', [['own','Nhà của mình'],['rented','Nhà thuê']], hs?hs.type:'own')) +
-    fld('Loại hình kinh doanh', sel('h_business', ['Homestay','Chung cư mini','Phòng đơn','Phòng trọ'], hs?hs.businessType:'Phòng trọ'), true) +
     '</div>' + fld('Thêm mô tả', '<textarea id="h_desc">'+esc(desc)+'</textarea>') + '</div>' +
-    '<div class="form-sec"><h3 class="sec">Chủ Nhà</h3>' +
+    /* --- Tab 2: Chủ nhà --- */
+    '<div id="htab_1" style="display:none">' +
     fld('Chọn chủ nhà có sẵn (để trống = nhập mới bên dưới)', selObj('h_landlordSel', db.landlords, ll?ll.id:'', function(l){ return l.name + ' — ' + l.phone; }, '-- Nhập chủ nhà mới --')) +
     '<div class="fgrid">' +
-    fld('Họ tên chủ nhà', inp('l_name', ll?ll.name:'')) +
-    fld('Ngày sinh', inp('l_dob', ll?ll.dob:'', 'date')) +
+    fld('Họ tên', inp('l_name', ll?ll.name:''), true) +
+    fld('Ngày sinh', inp('l_dob', ll?ll.dob:'', 'date'), true) +
     fld('Địa chỉ thường trú', inp('l_perm', ll?ll.permanentAddress:'')) +
-    fld('SDT', inp('l_phone', ll?ll.phone:'')) +
+    fld('SDT', inp('l_phone', ll?ll.phone:''), true) +
     fld('Giới tính', sel('l_gender', ['Nam','Nữ','Khác'], ll?ll.gender:'Nam')) +
     fld('Nghề nghiệp', inp('l_job', ll?ll.job:'')) +
     fld('Tình trạng hôn nhân', inp('l_marital', ll?ll.maritalStatus:'')) +
     fld('Mail', inp('l_email', ll?ll.email:'')) +
-    fld('CMND/CCCD', inp('l_idcard', ll?ll.idCard:'')) +
+    fld('CMND', inp('l_idcard', ll?ll.idCard:''), true) +
     '</div></div>' +
-    '<div class="form-sec"><h3 class="sec">Hợp Đồng (chỉ khi nhà thuê)</h3><div class="fgrid">' +
-    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number')) +
-    fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number')) +
-    fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date')) +
-    fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date')) +
-    fld('Ngày thanh toán hàng tháng', inp('lc_payday', lc?lc.payDay:5, 'number')) +
-    '</div></div>' +
+    /* --- Tab 3: Hợp Đồng + Mã Hóa Đơn dịch vụ --- */
+    '<div id="htab_2" style="display:none"><div class="fgrid">' +
+    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number'), true) +
+    fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number'), true) +
+    fld('Ngày bắt đầu thuê', inp('lc_start', lc?lc.startDate:'', 'date'), true) +
+    fld('Ngày kết thúc hợp đồng', inp('lc_end', lc?lc.endDate:'', 'date'), true) +
+    fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number')) +
+    fld('Thời gian thanh toán từ ngày', inp('lc_from', lc?lc.payFromDay:(lc?lc.payDay:1), 'number')) +
+    fld('đến ngày', inp('lc_to', lc?lc.payToDay:3, 'number')) +
+    '</div>' +
+    '<h3 class="sec">Mã Hóa Đơn dịch vụ</h3><div class="fgrid">' +
+    fld('Điện — Mã hóa đơn', inp('hu_dien_code', huDien?huDien.customerCode:''), true) +
+    fld('Điện — Tài khoản', inp('hu_dien_user', huDien?huDien.username:'')) +
+    fld('Điện — Mật khẩu', inp('hu_dien_pass', huDien?huDien.password:'')) +
+    fld('Điện — Chủ tài khoản', inp('hu_dien_holder', huDien?huDien.accountHolder:'')) +
+    fld('Nước — Mã hóa đơn', inp('hu_nuoc_code', huNuoc?huNuoc.customerCode:''), true) +
+    fld('Nước — Tài khoản', inp('hu_nuoc_user', huNuoc?huNuoc.username:'')) +
+    fld('Nước — Mật khẩu', inp('hu_nuoc_pass', huNuoc?huNuoc.password:'')) +
+    fld('Nước — Chủ tài khoản', inp('hu_nuoc_holder', huNuoc?huNuoc.accountHolder:'')) +
+    '</div><p style="color:#616161">Điền Mã hóa đơn điện/nước: khi lưu nhà, hệ thống tự tạo bản ghi thanh toán điện/nước tháng hiện tại (chưa thanh toán) cho nhà này.</p></div>' +
+    /* --- Tab 4: Tài sản chủ nhà --- */
+    '<div id="htab_3" style="display:none">' +
+    (llAssets.length ? '<h3 class="sec" style="margin-top:0">Tài sản chủ nhà hiện có</h3>' + tableHtml(['Mã tài sản','Loại tài sản','Trạng thái','Note'], llAssets.map(function(a){
+      return '<tr><td>'+esc(a.code)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td><td>'+esc(a.note||'')+'</td></tr>'; }).join('')) : '') +
+    '<h3 class="sec">Thêm tài sản của chủ nhà</h3><div id="ha_rows"></div>' +
+    '<div class="btnrow"><button type="button" class="btn sm" onclick="addHouseAssetRow()">+ Thêm tài sản</button></div></div>' +
     '<div class="btnrow"><button class="btn green" type="submit">Lưu nhà</button>' +
     '<button class="btn gray" type="button" onclick="go(\'houses\')">Quay lại</button></div></form>';
   setContent(h);
+  window._haCount = 0;
 }
 function saveHouse(id){
   var landlordSel = val('h_landlordSel');
@@ -351,31 +431,62 @@ function saveHouse(id){
   }
   var mapNote = val('h_map'), desc = val('h_desc');
   var fullDesc = (mapNote ? 'Vị trí bản đồ: ' + mapNote + '\n' : '') + desc;
+  // Đọc các dòng tài sản chủ nhà thêm mới trong form (tab 4)
+  var assetRows = [];
+  document.querySelectorAll('#ha_rows > div').forEach(function(row){
+    var inputs = row.querySelectorAll('input,select,textarea');
+    if(inputs.length >= 3 && inputs[0].value.trim())
+      assetRows.push({ type: inputs[0].value.trim(), status: inputs[1].value, note: inputs[2].value.trim() });
+  });
   var proceed = function(landlordId){
     var data = { address: val('h_address'), name: val('h_name'), province: val('h_province'),
       district: val('h_district'), ward: val('h_ward'), floors: num(val('h_floors')),
       floorArea: num(val('h_area')), bedrooms: num(val('h_bedrooms')), bathrooms: num(val('h_bathrooms')),
-      type: val('h_type'), businessType: val('h_business'), description: fullDesc,
-      landlordId: landlordId || null };
-    var saveContract = function(houseId){
+      type: val('h_type'), businessType: val('h_business'), rentalMode: val('h_rentalmode'),
+      description: fullDesc, landlordId: landlordId || null };
+    var afterHouse = function(houseId){
+      var jobs = [];
+      // Hợp đồng chủ nhà (chỉ khi nhà thuê + có tiền thuê)
       var rent = num(val('lc_rent'));
-      if(data.type !== 'rented' || !rent){ toast('Đã lưu nhà'); go('houses'); return; }
-      var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
-        deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
-        endDate: val('lc_end') || null, payDay: num(val('lc_payday')) || 5, status: 'active' };
-      var existed = id ? landlordContractOf(id) : null;
-      var pr = existed ? updateRec('landlordContracts', existed.id, lcData) : createRec('landlordContracts', lcData);
-      pr.then(function(){ toast('Đã lưu nhà + hợp đồng chủ nhà'); go('houses'); }).catch(errToast);
+      if(data.type === 'rented' && rent){
+        var fromDay = num(val('lc_from')) || 1;
+        var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
+          deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
+          endDate: val('lc_end') || null, payDay: fromDay,
+          payMonths: num(val('lc_paymonths')) || 1, payFromDay: fromDay,
+          payToDay: num(val('lc_to')) || 3, status: 'active' };
+        var existed = id ? landlordContractOf(id) : null;
+        jobs.push(existed ? updateRec('landlordContracts', existed.id, lcData) : createRec('landlordContracts', lcData));
+      }
+      // Mã Hóa Đơn dịch vụ -> tạo 2 bản ghi house_utilities (tháng hiện tại, chưa TT)
+      [['dien','hu_dien'],['nuoc','hu_nuoc']].forEach(function(pair){
+        var code = val(pair[1] + '_code');
+        if(!code) return;
+        var dup = db.houseUtilities.some(function(u){ return u.houseId === houseId && u.type === pair[0] && u.customerCode === code; });
+        if(dup) return;
+        jobs.push(createRec('houseUtilities', { houseId: houseId, type: pair[0], customerCode: code,
+          username: val(pair[1] + '_user'), password: val(pair[1] + '_pass'),
+          accountHolder: val(pair[1] + '_holder'), month: curMonth(), amount: 0, status: 'unpaid' }));
+      });
+      // Tài sản chủ nhà thêm mới trong form
+      assetRows.forEach(function(r){
+        jobs.push(createRec('assets', { houseId: houseId, roomId: null, ownerType: 'landlord',
+          type: r.type, status: r.status, note: r.note }));
+      });
+      Promise.all(jobs).then(function(){
+        toast('Đã lưu nhà' + (jobs.length ? ' + hợp đồng/tài khoản điện nước/tài sản kèm theo' : ''));
+        go('houses');
+      }).catch(errToast);
     };
-    if(id) updateRec('houses', id, data).then(function(){ saveContract(id); }).catch(errToast);
-    else createRec('houses', data).then(function(hs){ saveContract(hs.id); }).catch(errToast);
+    if(id) updateRec('houses', id, data).then(function(){ afterHouse(id); }).catch(errToast);
+    else createRec('houses', data).then(function(hs){ afterHouse(hs.id); }).catch(errToast);
   };
   if(landlordData) createRec('landlords', landlordData).then(function(l){ proceed(l.id); }).catch(errToast);
   else proceed(landlordSel || null);
 }
 
 /* ----- Thanh toán điện nước của nhà (house_utilities) ----- */
-var utilState = { tab:'dien', month:'', status:'', q:'', code:'', historyCode:null };
+var utilState = { tab:'dien', month:'', monthFrom:'', monthTo:'', status:'', q:'', code:'', historyCode:null };
 function viewHouseUtilities(){
   var st = utilState;
   var unpaidDien = db.houseUtilities.filter(function(u){ return u.type==='dien' && u.status!=='paid'; }).length;
@@ -389,24 +500,29 @@ function viewHouseUtilities(){
   h += '<div class="filters">' +
     '<div class="fg"><label>Địa chỉ / Tên nhà / mã</label>'+inp('uf_q', st.q, 'text', 'placeholder="Tìm..."')+'</div>' +
     '<div class="fg"><label>Mã '+(st.tab==='dien'?'điện':'nước')+'</label>'+inp('uf_code', st.code)+'</div>' +
-    '<div class="fg"><label>Thời gian (tháng)</label>'+inp('uf_month', month, 'month')+'</div>' +
+    '<div class="fg"><label>Thời gian (tháng)</label>'+inp('uf_month', st.historyCode ? '' : month, 'month')+'</div>' +
+    '<div class="fg"><label>Thời gian từ tháng</label>'+inp('uf_mfrom', st.monthFrom||'', 'month')+'</div>' +
+    '<div class="fg"><label>đến tháng</label>'+inp('uf_mto', st.monthTo||'', 'month')+'</div>' +
     '<div class="fg"><label>Trạng thái</label>'+sel('uf_status', [['','Tất cả'],['unpaid','Chưa thanh toán'],['paid','Đã thanh toán']], st.status)+'</div>' +
     '<button class="btn" onclick="applyUtilFilter()">Lọc</button>' +
-    '<button class="btn green" onclick="go(\'utilityForm\',{type:\''+st.tab+'\'})">+ Thêm</button></div>';
+    '<button class="btn green" onclick="go(\'utilityForm\',{type:\''+st.tab+'\'})">+ Thêm hóa đơn tháng mới</button></div>';
   if(st.historyCode) h += '<div class="err-msg" style="background:#e3f2fd;color:#1565c0;border-color:#90caf9">Đang xem lịch sử của mã <b>'+esc(st.historyCode)+'</b> — <a onclick="utilState.historyCode=null;viewHouseUtilities()">xem tất cả</a></div>';
   var list = db.houseUtilities.filter(function(u){
     if(st.historyCode) return u.customerCode === st.historyCode;
     if(u.type !== st.tab) return false;
     if(st.status && u.status !== st.status) return false;
     if(st.code && (u.customerCode||'').indexOf(st.code) < 0) return false;
-    if(month && u.month !== month) return false;
+    if(st.monthFrom || st.monthTo){
+      if(st.monthFrom && (u.month||'') < st.monthFrom) return false;
+      if(st.monthTo && (u.month||'') > st.monthTo) return false;
+    } else if(month && u.month !== month) return false;
     if(st.q && ((houseName(u.houseId)+' '+houseAddr(u.houseId)+' '+(u.customerCode||'')).toLowerCase().indexOf(st.q.toLowerCase())<0)) return false;
     return true;
   });
   h += tableHtml(['STT','Tên nhà','Địa chỉ','Mã '+(st.tab==='dien'?'Điện':'Nước'),'Chủ tài khoản','Tài Khoản','Mật khẩu','Thời gian','Tiền thanh toán','Trạng thái',''], list.map(function(u, i){
     return '<tr><td>'+(i+1)+'</td><td><b>'+esc(houseName(u.houseId))+'</b></td><td>'+esc(houseAddr(u.houseId))+'</td><td>'+esc(u.customerCode)+'</td>' +
       '<td>'+esc(u.accountHolder)+'</td><td>'+esc(u.username)+'</td><td>'+esc(u.password)+'</td><td>'+esc(u.month)+'</td>' +
-      '<td class="price">'+fmt(u.amount)+'</td><td>'+(u.status==='paid' ? '<span class="badge b-paid">Đã thanh toán</span>' : '<span class="badge b-unpaid">Chưa thanh toán</span>')+'</td>' +
+      '<td class="price">'+(u.amount ? fmt(u.amount) : '----------------')+'</td><td>'+(u.status==='paid' ? '<span class="badge b-paid">Đã thanh toán</span>' : '<span class="badge b-unpaid">Chưa thanh toán</span>')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="utilState.historyCode=\''+esc(u.customerCode)+'\';viewHouseUtilities()">Lịch sử</button>' +
       (u.status!=='paid' ? '<button class="linkbtn" onclick="payUtility(\''+u.id+'\')">Thanh toán</button>' : '') +
       '<button class="linkbtn" onclick="go(\'utilityForm\',{id:\''+u.id+'\'})">Sửa</button>' +
@@ -414,7 +530,7 @@ function viewHouseUtilities(){
   }).join(''), 'Chưa có dữ liệu điện nước');
   setContent(h);
 }
-function applyUtilFilter(){ utilState.q = val('uf_q'); utilState.code = val('uf_code'); utilState.month = val('uf_month'); utilState.status = val('uf_status'); utilState.historyCode = null; viewHouseUtilities(); }
+function applyUtilFilter(){ utilState.q = val('uf_q'); utilState.code = val('uf_code'); utilState.month = val('uf_month'); utilState.monthFrom = val('uf_mfrom'); utilState.monthTo = val('uf_mto'); utilState.status = val('uf_status'); utilState.historyCode = null; viewHouseUtilities(); }
 function payUtility(id){
   api('/house-utilities/' + id + '/pay', 'POST', {}).then(function(r){
     var u = byId(db.houseUtilities, id); if(u) u.status = 'paid';
@@ -479,7 +595,13 @@ function saveLandlordMeter(){
    3) PHÒNG TRỌ — tab đếm số, lọc, bảng, import/export CSV
    ================================================================ */
 var ROOM_TYPES = ['Chung cư mini','Homestay','Phòng trọ','Phòng đơn','Studio','1 ngủ 1 khách','2 ngủ 1 khách','Khép kín','Không khép kín'];
-var AMENITIES = ['Điều hòa','Nóng lạnh','Máy giặt','Tivi','Ban công','Cửa sổ','Sân phơi','Gác xép','Thang máy','Camera','Bảo vệ','Internet','Có chỗ để xe máy','Có chỗ để ô tô','Có chỗ để sạc xe điện'];
+/* Đúng 14 checkbox tiện ích của thiết kế "Thêm phòng" (SPEC-WEB-2 B).
+   'Tivi' không nằm trong form phòng — thuộc nhóm đồ/tài sản, chỉ dùng khi LỌC. */
+var AMENITIES = ['Cửa sổ','Ban công','Sân phơi','Thang máy','Điều hòa','Nóng lạnh','Máy giặt','Gác xép','Có chỗ để xe máy','Có chỗ để ô tô','Có chỗ để sạc xe điện','Bảo vệ','Camera','Internet'];
+function roomHasTivi(r){
+  if((r.amenities || []).indexOf('Tivi') >= 0) return true;
+  return db.assets.some(function(a){ return a.roomId === r.id && (a.type || '').indexOf('Tivi') >= 0; });
+}
 var roomFilter = { tab:'all' };
 function roomCounts(){
   var c = { all: db.rooms.length, empty:0, deposited:0, rented:0, expiring:0 };
@@ -514,7 +636,7 @@ function viewRooms(){
   h += tableHtml(['STT','Tên nhà','Tầng','Tên phòng','Cọc','Giá phòng','Diện tích','Loại phòng','Trạng thái','Chung chủ','Vệ sinh','Gác xép','Bếp','Số người tối đa','Dịch vụ',''], list.map(function(r, i){
     var sv = r.services || {};
     var svTxt = Object.keys(sv).filter(function(k){ return k!=='extra' && sv[k]; }).map(function(k){
-      return {dien:'Điện',dienChung:'Điện chung',internet:'Internet',nuoc:'Nước'}[k] || k; }).join(', ');
+      return {dien:'Điện',dienChung:'Điện chung',internet:'Internet',nuoc:'Nước',vesinh:'Vệ sinh'}[k] || k; }).join(', ');
     return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(r.houseId))+'</td><td>'+r.floor+'</td>' +
       '<td><a onclick="go(\'roomDetail\',{id:\''+r.id+'\'})"><b>'+esc(r.name)+'</b></a></td>' +
       '<td>'+fmt(r.minDeposit)+'</td><td class="price">'+fmt(r.price)+'</td><td>'+r.area+' m2</td><td>'+esc(r.type)+'</td>' +
@@ -542,6 +664,7 @@ function filteredRooms(){
     var ams = f.amenities || [];
     for(var i=0;i<ams.length;i++){
       if(ams[i]==='__park'){ if(!(r.amenities||[]).some(function(a){ return a.indexOf('để xe')>=0; })) return false; }
+      else if(ams[i]==='Tivi'){ if(!roomHasTivi(r)) return false; }
       else if((r.amenities||[]).indexOf(ams[i])<0) return false;
     }
     return true;
@@ -591,11 +714,24 @@ function importRoomsCsv(input){
         floor: num(rec.floor)||1, area: num(rec.area), type: rec.type || 'Phòng trọ',
         toilet: rec.toilet || 'Khép kín', kitchen: rec.kitchen || 'Không có', withOwner: false,
         price: num(rec.price), minDeposit: num(rec.minDeposit || rec.price), maxPeople: num(rec.maxPeople),
-        payMonths: 1, payFromDay: 1, payToDay: 3, amenities: [], services: {} }));
+        subRooms: num(rec.subRooms), payMonths: 1, payFromDay: 1, payToDay: 3, amenities: [], services: {} }));
     }
     Promise.all(jobs).then(function(){ toast('Đã thêm ' + jobs.length + ' phòng từ file'); viewRooms(); }).catch(errToast);
     input.value = '';
   });
+}
+function svPriceOf(v, dft){ return typeof v === 'number' ? v : (v && v.price !== undefined ? v.price : dft); }
+function svUnitOf(v, dft){ return (v && typeof v === 'object' && v.unit) ? v.unit : dft; }
+function addRoomExtraRow(name, price, unit){
+  var i = window._rexCount = (window._rexCount || 0) + 1;
+  var wrap = document.getElementById('r_sv_extra'); if(!wrap) return;
+  var div = document.createElement('div');
+  div.className = 'fgrid'; div.id = 'r_ex_row_' + i;
+  div.innerHTML = '<div>'+fld('Tên dịch vụ thêm', inp('r_ex_name_'+i, name||''))+'</div>' +
+    '<div>'+fld('Giá', inp('r_ex_price_'+i, price||0, 'number'))+'</div>' +
+    '<div>'+fld('Đơn vị', inp('r_ex_unit_'+i, unit||''))+'</div>' +
+    '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm red" onclick="document.getElementById(\'r_ex_row_'+i+'\').remove()">Xóa dòng</button></div>';
+  wrap.appendChild(div);
 }
 function viewRoomForm(p){
   var r = p.id ? byId(db.rooms, p.id) : null;
@@ -611,6 +747,7 @@ function viewRoomForm(p){
     fld('Bếp', sel('r_kitchen', ['Trong phòng','Bên ngoài','Chung','Không có'], r?r.kitchen:'Không có')) +
     fld('Giá phòng (vnđ)', inp('r_price', r?r.price:0, 'number'), true) +
     fld('Cọc tối thiểu (vnđ)', inp('r_minDep', r?r.minDeposit:0, 'number')) +
+    fld('Số phòng (phòng con bên trong)', inp('r_subrooms', r?r.subRooms:0, 'number')) +
     fld('Số người ở tối đa', inp('r_max', r?r.maxPeople:0, 'number')) +
     fld('Số tháng thanh toán 1 lần', inp('r_payMonths', r?r.payMonths:1, 'number')) +
     fld('Thanh toán từ ngày', inp('r_from', r?r.payFromDay:1, 'number')) +
@@ -619,29 +756,48 @@ function viewRoomForm(p){
     '<h3 class="sec">Tiện ích</h3><div>' + AMENITIES.map(function(a){
       return chk('r_am_'+a, a, r && (r.amenities||[]).indexOf(a)>=0);
     }).join('') + '</div>' +
-    '<h3 class="sec">Dịch vụ của phòng (giá mặc định khi tạo hợp đồng)</h3><div class="fgrid">' +
-    fld('Giá điện (vnđ/số)', inp('r_sv_dien', typeof sv.dien==='number'?sv.dien:(sv.dien?sv.dien.price:3000), 'number')) +
-    fld('Điện chung (vnđ/người)', inp('r_sv_dc', typeof sv.dienChung==='number'?sv.dienChung:(sv.dienChung?sv.dienChung.price:30000), 'number')) +
-    fld('Internet (vnđ/người)', inp('r_sv_net', typeof sv.internet==='number'?sv.internet:(sv.internet?sv.internet.price:50000), 'number')) +
-    '</div>';
+    '<h3 class="sec">Dịch vụ của phòng (giá + đơn vị từng dịch vụ — mặc định khi tạo hợp đồng)</h3><div class="fgrid">' +
+    fld('Giá điện (vnđ)', inp('r_sv_dien', svPriceOf(sv.dien, 3000), 'number')) +
+    fld('Đơn vị điện', sel('r_sv_dien_unit', [['so','số'],['nguoi','người'],['phong','phòng']], svUnitOf(sv.dien, 'so'))) +
+    fld('Giá nước (vnđ)', inp('r_sv_nuoc', svPriceOf(sv.nuoc, 20000), 'number')) +
+    fld('Đơn vị nước', sel('r_sv_nuoc_unit', [['so','số (m3)'],['nguoi','người'],['phong','phòng']], svUnitOf(sv.nuoc, 'nguoi'))) +
+    fld('Điện chung (vnđ/người)', inp('r_sv_dc', svPriceOf(sv.dienChung, 30000), 'number')) +
+    fld('Vệ sinh (vnđ/người)', inp('r_sv_vs', svPriceOf(sv.vesinh, 20000), 'number')) +
+    fld('Internet (vnđ/người)', inp('r_sv_net', svPriceOf(sv.internet, 50000), 'number')) +
+    '</div><div id="r_sv_extra"></div>' +
+    '<div class="btnrow"><button type="button" class="btn sm" onclick="addRoomExtraRow()">+ Thêm dịch vụ</button></div>';
   if(r){
     var assets = db.assets.filter(function(a){ return a.roomId === r.id; });
-    h += '<h3 class="sec">Tài sản của phòng</h3>' + tableHtml(['Mã TS','Loại','Trạng thái'], assets.map(function(a){
+    h += '<h3 class="sec">Tài sản trong phòng</h3>' + tableHtml(['Mã TS','Loại','Trạng thái'], assets.map(function(a){
       return '<tr><td>'+esc(a.code)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td></tr>';
     }).join(''), 'Phòng chưa có tài sản') ;
   }
   h += '<div class="btnrow"><button class="btn green" type="submit">Lưu phòng</button>' +
     '<button class="btn gray" type="button" onclick="go(\'rooms\')">Quay lại</button></div></form>';
   setContent(h);
+  window._rexCount = 0;
+  ((sv && sv.extra) || []).forEach(function(x){ addRoomExtraRow(x.name, x.price, x.unit); });
 }
 function saveRoom(id){
+  var old = id ? byId(db.rooms, id) : null;
   var amenities = AMENITIES.filter(function(a){ return isChk('r_am_'+a); });
+  // Giữ lại tiện ích ngoài danh sách 14 của thiết kế (vd 'Tivi' từ dữ liệu cũ)
+  if(old) (old.amenities || []).forEach(function(a){ if(AMENITIES.indexOf(a) < 0 && amenities.indexOf(a) < 0) amenities.push(a); });
+  var extra = [];
+  document.querySelectorAll('#r_sv_extra > div').forEach(function(row){
+    var inputs = row.querySelectorAll('input');
+    if(inputs.length >= 3 && inputs[0].value.trim())
+      extra.push({ name: inputs[0].value.trim(), price: num(inputs[1].value), unit: inputs[2].value.trim() });
+  });
   var data = { houseId: val('r_house'), name: val('r_name'), floor: num(val('r_floor')),
     area: num(val('r_area')), type: val('r_type'), toilet: val('r_toilet'), kitchen: val('r_kitchen'),
     withOwner: isChk('r_withOwner'), price: num(val('r_price')), minDeposit: num(val('r_minDep')),
-    maxPeople: num(val('r_max')), payMonths: num(val('r_payMonths'))||1,
+    maxPeople: num(val('r_max')), subRooms: num(val('r_subrooms')), payMonths: num(val('r_payMonths'))||1,
     payFromDay: num(val('r_from'))||1, payToDay: num(val('r_to'))||3, amenities: amenities,
-    services: { dien: num(val('r_sv_dien')), dienChung: num(val('r_sv_dc')), internet: num(val('r_sv_net')), extra: [] } };
+    services: { dien: { price: num(val('r_sv_dien')), unit: val('r_sv_dien_unit') },
+      nuoc: { price: num(val('r_sv_nuoc')), unit: val('r_sv_nuoc_unit') },
+      dienChung: { price: num(val('r_sv_dc')) }, vesinh: { price: num(val('r_sv_vs')) },
+      internet: { price: num(val('r_sv_net')) }, extra: extra } };
   var pr = id ? updateRec('rooms', id, data) : createRec('rooms', data);
   pr.then(function(){ toast('Đã lưu phòng'); go('rooms'); }).catch(errToast);
 }
@@ -655,6 +811,7 @@ function viewRoomDetail(p){
     '<div class="kv"><span>Trạng thái</span><span>'+statusBadge(roomStatus(r))+'</span></div>' +
     '<div class="kv"><span>Giá phòng / Cọc tối thiểu</span><span>'+fmt(r.price)+' / '+fmt(r.minDeposit)+'</span></div>' +
     '<div class="kv"><span>Tầng / Diện tích / Loại</span><span>'+r.floor+' / '+r.area+' m2 / '+esc(r.type)+'</span></div>' +
+    '<div class="kv"><span>Số phòng (phòng con) / Số người tối đa</span><span>'+(r.subRooms||0)+' / '+(r.maxPeople||0)+'</span></div>' +
     '<div class="kv"><span>Vệ sinh / Bếp / Chung chủ</span><span>'+esc(r.toilet)+' / '+esc(r.kitchen||'Không có')+' / '+(r.withOwner?'Có':'Không')+'</span></div>' +
     '<div class="kv"><span>Tiện ích</span><span>'+esc((r.amenities||[]).join(', ') || '—')+'</span></div>' +
     (ct ? '<div class="kv"><span>Hợp đồng</span><span>'+esc(ct.code||'')+' — '+esc(customerName(ct.customerId))+' ('+fmtDate(ct.startDate)+' → '+fmtDate(ct.endDate)+')</span></div>' : '') +
@@ -718,38 +875,106 @@ function viewDeposits(){
   }).join(''), 'Chưa có đặt cọc nào');
   setContent(h);
 }
+function switchDepTab(i){
+  for(var k=0;k<2;k++){
+    var sec = document.getElementById('dptab_'+k), btn = document.getElementById('dptabbtn_'+k);
+    if(sec) sec.style.display = k===i ? '' : 'none';
+    if(btn) btn.className = 'tab' + (k===i ? ' on' : '');
+  }
+}
+function depFillFromRoom(){
+  var room = byId(db.rooms, val('dp_room')); if(!room) return;
+  var sv = room.services || {};
+  function set(id, v){ var e = document.getElementById(id); if(e && (e.value === '' || e.value === '0')) e.value = v; }
+  set('dp_rent', room.price || 0);
+  set('dp_price', room.price || 0);
+  set('dp_mindep', room.minDeposit || 0);
+  set('dp_max', room.maxPeople || 0);
+  set('dp_paymonths', room.payMonths || 1);
+  set('dp_from', room.payFromDay || 1);
+  set('dp_to', room.payToDay || 3);
+  set('dp_sv_dien', svPriceOf(sv.dien, 3000));
+  set('dp_sv_nuoc', svPriceOf(sv.nuoc, 80000));
+  var hs = document.getElementById('dp_house'); if(hs) hs.value = room.houseId;
+}
 function viewDepositForm(p){
   var d = p.id ? byId(db.deposits, p.id) : null;
   var room = d ? byId(db.rooms, d.roomId) : null;
-  var h = pageTitle(d ? 'Sửa cọc phòng' : 'Thêm cọc phòng');
-  h += '<form class="form-card" onsubmit="event.preventDefault();saveDeposit(\''+(d?d.id:'')+'\')"><div class="fgrid">' +
+  var cust = d && d.customerId ? byId(db.customers, d.customerId) : null;
+  var sc = (d && d.serviceConfig) || {};
+  var rsv = room ? (room.services || {}) : {};
+  function scv(k, sub, dft){ var s = sc[k] || rsv[k]; if(s === undefined || s === null) return dft; return (typeof s === 'object') ? (s[sub] !== undefined ? s[sub] : dft) : (sub === 'price' ? s : dft); }
+  var h = pageTitle(d ? 'Sửa cọc phòng' : 'Thêm cọc phòng — Cọc giữ phòng');
+  h += '<div class="tabs"><span class="tab on" id="dptabbtn_0" onclick="switchDepTab(0)">Thông tin phòng</span>' +
+    '<span class="tab" id="dptabbtn_1" onclick="switchDepTab(1)">Thông tin cọc giữ phòng</span></div>';
+  h += '<form class="form-card" onsubmit="event.preventDefault();saveDeposit(\''+(d?d.id:'')+'\')">' +
+    /* --- Tab Thông tin phòng: tự điền từ phòng, cho sửa --- */
+    '<div id="dptab_0">' +
+    '<div class="fgrid">' +
     fld('Nhà', selObj('dp_house', db.houses, d?d.houseId:'', function(x){ return (x.name||x.address); }), true) +
-    fld('Phòng', selObj('dp_room', db.rooms, d?d.roomId:'', function(x){ return x.name + ' (' + houseName(x.houseId) + ')'; }), true) +
-    fld('Mã HĐ cọc (để trống = tự sinh)', inp('dp_code', d?d.code:'')) +
-    fld('Tên khách cọc', inp('dp_cust', d?d.customerName:''), true) +
-    fld('SDT khách', inp('dp_phone', d?d.phone:'')) +
+    fld('Phòng', '<select id="dp_room" onchange="depFillFromRoom()">' + db.rooms.map(function(x){
+      return '<option value="'+x.id+'"'+(d && d.roomId===x.id ? ' selected' : '')+'>'+esc(x.name + ' (' + houseName(x.houseId) + ')')+'</option>'; }).join('') + '</select>', true) +
+    fld('Giá phòng (vnđ)', inp('dp_price', d ? (room?room.price:0) : 0, 'number')) +
     fld('Giá thuê (vnđ)', inp('dp_rent', d?d.rentPrice:(room?room.price:0), 'number')) +
-    fld('Tiền giữ phòng (vnđ)', inp('dp_amount', d?d.amount:0, 'number'), true) +
+    fld('Cọc (vnđ)', inp('dp_mindep', room?room.minDeposit:0, 'number')) +
+    fld('Số người ở tối đa', inp('dp_max', room?room.maxPeople:0, 'number')) +
+    fld('Số tháng thanh toán 1 lần', inp('dp_paymonths', d?d.payMonths:1, 'number')) +
+    fld('Thời gian thanh toán từ ngày', inp('dp_from', d?d.payDayFrom:1, 'number')) +
+    fld('đến ngày', inp('dp_to', d?d.payDayTo:3, 'number')) +
+    '</div>' +
+    '<h3 class="sec">Dịch Vụ</h3><div class="fgrid">' +
+    fld('Giá điện (vnđ)', inp('dp_sv_dien', scv('dien','price',3000), 'number')) +
+    fld('Cách tính điện', sel('dp_sv_dien_unit', [['so','số'],['nguoi','người'],['phong','phòng']], scv('dien','unit','so'))) +
+    fld('Giá nước (vnđ)', inp('dp_sv_nuoc', scv('nuoc','price',80000), 'number')) +
+    fld('Cách tính nước', sel('dp_sv_nuoc_unit', [['nguoi','người'],['so','số'],['phong','phòng']], scv('nuoc','unit','nguoi'))) +
+    fld('Xe máy — số lượng', inp('dp_xm_n', scv('xeMay','count',0), 'number')) +
+    fld('Xe máy — phí 1 xe (vnđ)', inp('dp_xm_f', scv('xeMay','fee',30000), 'number')) +
+    fld('Ô tô — số lượng', inp('dp_ot_n', scv('oTo','count',0), 'number')) +
+    fld('Ô tô — phí 1 xe (vnđ)', inp('dp_ot_f', scv('oTo','fee',100000), 'number')) +
+    fld('Xe đạp — số lượng', inp('dp_xd_n', scv('xeDap','count',0), 'number')) +
+    fld('Xe đạp — phí 1 xe (vnđ)', inp('dp_xd_f', scv('xeDap','fee',10000), 'number')) +
+    '</div></div>' +
+    /* --- Tab Thông tin cọc giữ phòng: khách + cọc --- */
+    '<div id="dptab_1" style="display:none">' +
+    '<h3 class="sec" style="margin-top:0">Thông tin khách</h3>' +
+    fld('Chọn khách có sẵn (để trống = nhập mới bên dưới)', selObj('dp_custSel', db.customers, cust?cust.id:'', function(c){ return c.name + ' — ' + c.phone; }, '-- Nhập khách mới --')) +
+    custFieldsHtml('dc', cust || (d ? { name: d.customerName, phone: d.phone } : {})) +
+    '<h3 class="sec">Thông tin cọc giữ phòng</h3><div class="fgrid">' +
+    fld('Mã HĐ cọc (để trống = tự sinh)', inp('dp_code', d?d.code:'')) +
+    fld('Số tiền cọc giữ phòng (vnđ)', inp('dp_amount', d?d.amount:0, 'number'), true) +
     fld('Thời gian trống phòng (ngày)', inp('dp_vacant', d?d.vacantDays:0, 'number')) +
-    fld('Ngày cọc', inp('dp_date', d?d.date:today(), 'date')) +
-    fld('Ngày vào', inp('dp_in', d?d.moveInDate:'', 'date')) +
-    fld('Ngày ra', inp('dp_out', d?d.moveOutDate:'', 'date')) +
-    fld('Ngày đến làm hợp đồng', inp('dp_contract', d?d.contractDate:'', 'date')) +
-    fld('Ngày hết hạn cọc', inp('dp_expiry', d?d.expiryDate:'', 'date')) +
-    '</div>' + fld('Ghi chú', '<textarea id="dp_note">'+esc(d?d.note:'')+'</textarea>') +
-    '<div class="btnrow"><button class="btn green" type="submit">Lưu cọc</button>' +
+    fld('Thời gian thuê từ ngày (ngày vào)', inp('dp_in', d?d.moveInDate:'', 'date'), true) +
+    fld('đến ngày (ngày ra)', inp('dp_out', d?d.moveOutDate:'', 'date'), true) +
+    fld('Ngày cọc', inp('dp_date', d?d.date:today(), 'date'), true) +
+    fld('Ngày đến làm hợp đồng', inp('dp_contract', d?d.contractDate:'', 'date'), true) +
+    fld('Ngày hết hạn cọc', inp('dp_expiry', d?d.expiryDate:'', 'date'), true) +
+    '</div>' + fld('Ghi chú', '<textarea id="dp_note">'+esc(d?d.note:'')+'</textarea>') + '</div>' +
+    '<div class="btnrow"><button class="btn green" type="submit">'+(d ? 'Lưu cọc' : 'Cọc giữ phòng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'deposits\')">Quay lại</button></div></form>';
   setContent(h);
+  if(!d) depFillFromRoom();
 }
 function saveDeposit(id){
   var room = byId(db.rooms, val('dp_room'));
-  var data = { houseId: room ? room.houseId : val('dp_house'), roomId: val('dp_room'), code: val('dp_code'),
-    customerName: val('dp_cust'), phone: val('dp_phone'), amount: num(val('dp_amount')),
-    rentPrice: num(val('dp_rent')), vacantDays: num(val('dp_vacant')),
-    date: val('dp_date') || null, moveInDate: val('dp_in') || null, moveOutDate: val('dp_out') || null,
-    contractDate: val('dp_contract') || null, expiryDate: val('dp_expiry') || null, note: val('dp_note') };
-  var pr = id ? updateRec('deposits', id, data) : createRec('deposits', data);
-  pr.then(function(){ toast('Đã lưu cọc'); go('deposits'); }).catch(errToast);
+  var custSel = val('dp_custSel');
+  var finish = function(customer){
+    var data = { houseId: room ? room.houseId : val('dp_house'), roomId: val('dp_room'), code: val('dp_code'),
+      customerId: customer ? customer.id : null,
+      customerName: customer ? customer.name : val('dc_name'), phone: customer ? customer.phone : val('dc_phone'),
+      amount: num(val('dp_amount')), rentPrice: num(val('dp_rent')), vacantDays: num(val('dp_vacant')),
+      payMonths: num(val('dp_paymonths')) || 1, payDayFrom: num(val('dp_from')) || 1, payDayTo: num(val('dp_to')) || 3,
+      serviceConfig: { dien: { price: num(val('dp_sv_dien')), unit: val('dp_sv_dien_unit') },
+        nuoc: { price: num(val('dp_sv_nuoc')), unit: val('dp_sv_nuoc_unit') },
+        xeMay: { count: num(val('dp_xm_n')), fee: num(val('dp_xm_f')) },
+        oTo: { count: num(val('dp_ot_n')), fee: num(val('dp_ot_f')) },
+        xeDap: { count: num(val('dp_xd_n')), fee: num(val('dp_xd_f')) } },
+      date: val('dp_date') || null, moveInDate: val('dp_in') || null, moveOutDate: val('dp_out') || null,
+      contractDate: val('dp_contract') || null, expiryDate: val('dp_expiry') || null, note: val('dp_note') };
+    var pr = id ? updateRec('deposits', id, data) : createRec('deposits', data);
+    pr.then(function(){ toast('Đã lưu cọc giữ phòng'); go('deposits'); }).catch(errToast);
+  };
+  if(custSel){ finish(byId(db.customers, custSel)); return; }
+  createRec('customers', collectCust('dc')).then(finish).catch(errToast);
 }
 VIEWS.deposits = viewDeposits; VIEWS.depositForm = viewDepositForm;
 
@@ -780,64 +1005,86 @@ function viewContracts(){
     if(st.tab==='expiring' && !(c.status==='active' && c.endDate && c.endDate >= today() && diffDays(today(), c.endDate) <= 30)) return false;
     return true;
   });
-  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Người đại diện','SĐT','Giá thuê','Số người','Thời gian thuê','Trạng thái',''], list.map(function(c, i){
-    var cust = byId(db.customers, c.customerId);
+  function latestDeposit(roomId){
+    var ds = db.deposits.filter(function(x){ return x.roomId === roomId; });
+    return ds.length ? ds[ds.length - 1] : null;
+  }
+  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Giá phòng','Giá thuê','Tiền cọc','Trạng thái phòng','Thời gian trống phòng (ngày)','Ngày vào','Ngày ra','Số người ở','Trạng thái HĐ',''], list.map(function(c, i){
+    var room = byId(db.rooms, c.roomId);
+    var dep = latestDeposit(c.roomId);
     var label = c.status==='liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>'
       : (contractSigned(c) ? (c.endDate && c.endDate >= today() && diffDays(today(), c.endDate) <= 30 ? '<span class="badge b-deposited">Sắp hết hạn</span>' : '<span class="badge b-paid">Đã ký</span>') : '<span class="badge b-unpaid">Chưa ký</span>');
     return '<tr><td>'+(i+1)+'</td><td>'+esc(c.code||'')+'</td><td>'+esc(houseName(c.houseId))+'</td><td>'+esc(roomName(c.roomId))+'</td>' +
-      '<td>'+esc(cust ? cust.name : '')+'</td><td>'+esc(cust ? cust.phone : '')+'</td><td class="price">'+fmt(c.price)+'</td><td>'+c.people+'</td>' +
-      '<td>'+fmtDate(c.startDate)+' → '+fmtDate(c.endDate)+'</td><td>'+label+'</td>' +
+      '<td>'+fmt(room ? room.price : 0)+'</td><td class="price">'+fmt(c.price)+'</td><td>'+fmt(c.deposit)+'</td>' +
+      '<td>'+statusBadge(room ? roomStatus(room) : 'empty')+'</td><td>'+(dep ? (dep.vacantDays||0) : '')+'</td>' +
+      '<td>'+fmtDate(c.startDate)+'</td><td>'+fmtDate(c.endDate)+'</td><td>'+c.people+'</td><td>'+label+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'contractDetail\',{id:\''+c.id+'\'})">Chi tiết</button>' +
+      '<button class="linkbtn" onclick="go(\'contractForm\',{id:\''+c.id+'\'})">Sửa</button>' +
       (c.status==='active' ? '<button class="linkbtn" onclick="go(\'liquidate\',{id:\''+c.id+'\'})">Thanh lý</button>' : '') +
       '<button class="linkbtn red" onclick="delBtn(\'Hợp đồng '+esc(c.code||roomName(c.roomId))+'\',\'contracts\',\''+c.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có hợp đồng nào');
   setContent(h);
 }
+function contractCustPick(){
+  var c = byId(db.customers, val('c_custSel'));
+  var map = { name:'cu_name', dob:'cu_dob', permanentAddress:'cu_perm', phone:'cu_phone', gender:'cu_gender',
+    job:'cu_job', maritalStatus:'cu_marital', email:'cu_email', idCard:'cu_idcard', currentAddress:'cu_curr', note:'cu_note' };
+  Object.keys(map).forEach(function(k){
+    var e = document.getElementById(map[k]); if(e) e.value = c ? (c[k] || '') : '';
+  });
+}
 function viewContractForm(p){
-  var room = p.roomId ? byId(db.rooms, p.roomId) : (db.rooms[0] || null);
-  var rsv = room ? (room.services || {}) : {};
+  var ct = p.id ? byId(db.contracts, p.id) : null;
+  var room = ct ? byId(db.rooms, ct.roomId) : (p.roomId ? byId(db.rooms, p.roomId) : (db.rooms[0] || null));
+  var cust = ct ? byId(db.customers, ct.customerId) : null;
+  var sv = ct ? (ct.services || {}) : (room ? (room.services || {}) : {});
   function svNum(v, dft){ return typeof v === 'number' ? v : (v && v.price !== undefined ? v.price : dft); }
-  var h = pageTitle('Thêm hợp đồng');
-  h += '<p style="color:#616161;margin-bottom:10px">Mặc định toàn bộ thông tin lấy từ phòng (giá, cọc tối thiểu, dịch vụ của phòng) — có thể chỉnh lại trước khi lưu.</p>';
-  h += '<form class="form-card" onsubmit="event.preventDefault();saveContract()">' +
+  function svUnit(v, dft){ return (v && typeof v === 'object' && v.unit) ? v.unit : dft; }
+  var h = pageTitle(ct ? 'Sửa hợp đồng ' + (ct.code || '') : 'Thêm hợp đồng');
+  h += '<p style="color:#616161;margin-bottom:10px">Mặc định toàn bộ thông tin lấy từ thông tin phòng (giá, cọc tối thiểu, dịch vụ của phòng) — có thể chỉnh lại trước khi lưu.</p>';
+  h += '<form class="form-card" onsubmit="event.preventDefault();saveContract(\''+(ct?ct.id:'')+'\')">' +
     fld('Phòng', selObj('c_room', db.rooms, room?room.id:'', function(x){ return x.name + ' — ' + houseName(x.houseId); }, undefined), true) +
-    '<div class="form-sec"><h3 class="sec">Người đại diện (khách thuê)</h3><div class="fgrid">' +
-    fld('Họ tên', inp('cu_name', ''), true) + fld('Ngày sinh', inp('cu_dob', '', 'date')) +
-    fld('SDT', inp('cu_phone', ''), true) + fld('Giới tính', sel('cu_gender', ['Nam','Nữ','Khác'], 'Nam')) +
-    fld('Email', inp('cu_email', '')) + fld('CMND/CCCD', inp('cu_idcard', '')) + '</div></div>' +
+    '<div class="form-sec"><h3 class="sec">Khách hàng</h3>' +
+    fld('Chọn khách có sẵn (để trống = nhập mới bên dưới)', '<select id="c_custSel" onchange="contractCustPick()">' +
+      '<option value="">-- Nhập khách mới --</option>' + db.customers.map(function(x){
+        return '<option value="'+x.id+'"'+(cust && cust.id===x.id ? ' selected' : '')+'>'+esc(x.name + ' — ' + (x.phone||''))+'</option>'; }).join('') + '</select>') +
+    custFieldsHtml('cu', cust || {}) + '</div>' +
     '<div class="form-sec"><h3 class="sec">Thông tin hợp đồng</h3><div class="fgrid">' +
-    fld('Ngày ký hợp đồng', inp('c_sign', today(), 'date')) +
-    fld('Thời gian thuê từ', inp('c_start', today(), 'date'), true) +
-    fld('đến', inp('c_end', addDays(today(), 365), 'date'), true) +
-    fld('Giá phòng (vnđ)', inp('c_price', room?room.price:0, 'number'), true) +
-    fld('Cọc (vnđ)', inp('c_deposit', room?room.minDeposit:0, 'number')) +
-    fld('Số người ở', inp('c_people', room?room.maxPeople:1, 'number')) +
-    fld('Số tháng thanh toán 1 lần', inp('c_payMonths', room?room.payMonths:1, 'number')) +
-    fld('Thanh toán từ ngày', inp('c_from', room?room.payFromDay:1, 'number')) +
-    fld('đến ngày', inp('c_to', room?room.payToDay:3, 'number')) + '</div></div>' +
-    '<div class="form-sec"><h3 class="sec">Dịch vụ</h3><div class="fgrid">' +
-    fld('Giá điện (vnđ)', inp('c_dien', svNum(rsv.dien, 3000), 'number')) +
-    fld('Đơn vị điện', sel('c_dien_unit', [['so','số'],['nguoi','người']], 'so')) +
-    fld('Giá nước (vnđ)', inp('c_nuoc', svNum(rsv.nuoc, 80000), 'number')) +
-    fld('Đơn vị nước', sel('c_nuoc_unit', [['nguoi','người'],['so','số']], 'nguoi')) +
-    fld('Điện chung (vnđ/người)', inp('c_dc', svNum(rsv.dienChung, 30000), 'number')) +
-    fld('Vệ sinh (vnđ/người)', inp('c_vs', 20000, 'number')) +
-    fld('Internet (vnđ/người)', inp('c_net', svNum(rsv.internet, 50000), 'number')) +
-    fld('Xe máy — số lượng', inp('c_xm_n', 1, 'number')) + fld('Xe máy — phí/xe', inp('c_xm_f', 30000, 'number')) +
-    fld('Ô tô — số lượng', inp('c_ot_n', 0, 'number')) + fld('Ô tô — phí/xe', inp('c_ot_f', 100000, 'number')) +
-    fld('Xe đạp — số lượng', inp('c_xd_n', 0, 'number')) + fld('Xe đạp — phí/xe', inp('c_xd_f', 10000, 'number')) +
+    fld('Ngày ký hợp đồng', inp('c_sign', ct?ct.signDate:today(), 'date')) +
+    fld('Ngày vào (thời gian thuê từ)', inp('c_start', ct?ct.startDate:today(), 'date'), true) +
+    fld('Ngày ra (đến)', inp('c_end', ct?ct.endDate:addDays(today(), 365), 'date'), true) +
+    fld('Giá phòng (vnđ)', inp('c_price', ct?ct.price:(room?room.price:0), 'number'), true) +
+    fld('Cọc (vnđ)', inp('c_deposit', ct?ct.deposit:(room?room.minDeposit:0), 'number')) +
+    fld('Số người ở', inp('c_people', ct?ct.people:(room?room.maxPeople:1), 'number')) +
+    fld('Số tháng thanh toán 1 lần', inp('c_payMonths', ct?ct.payMonths:(room?room.payMonths:1), 'number')) +
+    fld('Thời gian thanh toán từ ngày', inp('c_from', ct?ct.payFromDay:(room?room.payFromDay:1), 'number')) +
+    fld('đến ngày', inp('c_to', ct?ct.payToDay:(room?room.payToDay:3), 'number')) + '</div></div>' +
+    '<div class="form-sec"><h3 class="sec">Dịch Vụ (cấu hình cho hợp đồng — hóa đơn tháng tính theo cấu hình này)</h3><div class="fgrid">' +
+    fld('Giá điện (vnđ)', inp('c_dien', svNum(sv.dien, 3000), 'number')) +
+    fld('Cách tính điện', sel('c_dien_unit', [['so','số'],['nguoi','người'],['phong','phòng']], svUnit(sv.dien, 'so'))) +
+    fld('Giá nước (vnđ)', inp('c_nuoc', svNum(sv.nuoc, 80000), 'number')) +
+    fld('Cách tính nước', sel('c_nuoc_unit', [['nguoi','người'],['so','số'],['phong','phòng']], svUnit(sv.nuoc, 'nguoi'))) +
+    fld('Điện chung (vnđ/người)', inp('c_dc', svNum(sv.dienChung, 30000), 'number')) +
+    fld('Vệ sinh (vnđ/người)', inp('c_vs', svNum(sv.vesinh, 20000), 'number')) +
+    fld('Internet (vnđ/người)', inp('c_net', svNum(sv.internet, 50000), 'number')) +
+    fld('Xe máy — số lượng', inp('c_xm_n', (sv.xeMay||{}).count !== undefined ? sv.xeMay.count : 1, 'number')) + fld('Xe máy — phí 1 xe', inp('c_xm_f', (sv.xeMay||{}).fee !== undefined ? sv.xeMay.fee : 30000, 'number')) +
+    fld('Ô tô — số lượng', inp('c_ot_n', (sv.oTo||{}).count || 0, 'number')) + fld('Ô tô — phí 1 xe', inp('c_ot_f', (sv.oTo||{}).fee !== undefined ? sv.oTo.fee : 100000, 'number')) +
+    fld('Xe đạp — số lượng', inp('c_xd_n', (sv.xeDap||{}).count || 0, 'number')) + fld('Xe đạp — phí 1 xe', inp('c_xd_f', (sv.xeDap||{}).fee !== undefined ? sv.xeDap.fee : 10000, 'number')) +
     '</div></div>' +
-    '<div class="btnrow"><button class="btn green" type="submit">Đăng ký hợp đồng</button>' +
+    '<div class="btnrow"><button class="btn green" type="submit">'+(ct ? 'Lưu hợp đồng' : 'Thêm hợp đồng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'contracts\')">Quay lại</button></div></form>';
   setContent(h);
 }
-function saveContract(){
+function saveContract(id){
   var room = byId(db.rooms, val('c_room'));
   if(!room){ toast('Vui lòng chọn phòng'); return; }
-  if(activeContract(room.id)){ toast('Phòng đã có hợp đồng đang hiệu lực'); return; }
-  var custData = { name: val('cu_name'), dob: val('cu_dob') || null, phone: val('cu_phone'),
-    gender: val('cu_gender'), email: val('cu_email'), idCard: val('cu_idcard') };
-  createRec('customers', custData).then(function(cust){
+  var cur = id ? byId(db.contracts, id) : null;
+  var other = activeContract(room.id);
+  if(other && (!cur || other.id !== cur.id)){ toast('Phòng đã có hợp đồng đang hiệu lực'); return; }
+  var custSel = val('c_custSel');
+  var custData = collectCust('cu');
+  var custPromise = custSel ? updateRec('customers', custSel, custData) : createRec('customers', custData);
+  custPromise.then(function(cust){
     var services = { dien: { price: num(val('c_dien')), unit: val('c_dien_unit') },
       nuoc: { price: num(val('c_nuoc')), unit: val('c_nuoc_unit') },
       dienChung: { price: num(val('c_dc')) }, vesinh: { price: num(val('c_vs')) },
@@ -845,12 +1092,15 @@ function saveContract(){
       xeMay: { count: num(val('c_xm_n')), fee: num(val('c_xm_f')) },
       oTo: { count: num(val('c_ot_n')), fee: num(val('c_ot_f')) },
       xeDap: { count: num(val('c_xd_n')), fee: num(val('c_xd_f')) } };
-    return createRec('contracts', { houseId: room.houseId, roomId: room.id, customerId: cust.id,
+    var data = { houseId: room.houseId, roomId: room.id, customerId: cust.id,
       signDate: val('c_sign') || null, startDate: val('c_start') || null, endDate: val('c_end') || null,
       price: num(val('c_price')), deposit: num(val('c_deposit')), people: num(val('c_people')) || 1,
       payMonths: num(val('c_payMonths')) || 1, payFromDay: num(val('c_from')) || 1, payToDay: num(val('c_to')) || 3,
-      services: services, status: 'active' });
-  }).then(function(){ toast('Đã tạo hợp đồng — phòng đã chuyển sang Đã thuê'); go('contracts'); }).catch(errToast);
+      services: services };
+    var pr = cur ? updateRec('contracts', cur.id, data)
+      : createRec('contracts', Object.assign({ status: 'active' }, data));
+    return pr;
+  }).then(function(){ toast(cur ? 'Đã lưu hợp đồng' : 'Đã tạo hợp đồng — phòng đã chuyển sang Đã thuê'); go('contracts'); }).catch(errToast);
 }
 function viewContractDetail(p){
   var c = byId(db.contracts, p.id); if(!c){ toast('Không tìm thấy hợp đồng'); go('contracts'); return; }
@@ -867,7 +1117,7 @@ function viewContractDetail(p){
     '<div class="kv"><span>Điện chung / Vệ sinh / Internet</span><span>'+svLine('dienChung')+' / '+svLine('vesinh')+' / '+svLine('internet')+'</span></div>' +
     '<div class="kv"><span>Xe máy / Ô tô / Xe đạp</span><span>'+svLine('xeMay')+' / '+svLine('oTo')+' / '+svLine('xeDap')+'</span></div>' +
     '<div class="kv"><span>Trạng thái</span><span>'+(c.status==='active'?'Đang hiệu lực':'Đã thanh lý')+'</span></div></div>';
-  h += '<div class="btnrow">' + (c.status==='active' ? '<button class="btn orange" onclick="go(\'liquidate\',{id:\''+c.id+'\'})">Thanh lý hợp đồng</button>' : '') +
+  h += '<div class="btnrow"><button class="btn" onclick="go(\'contractForm\',{id:\''+c.id+'\'})">Sửa hợp đồng</button>' + (c.status==='active' ? '<button class="btn orange" onclick="go(\'liquidate\',{id:\''+c.id+'\'})">Thanh lý hợp đồng</button>' : '') +
     '<button class="btn" onclick="quickMonthly(\''+c.roomId+'\')">Tạo hóa đơn tháng này</button>' +
     '<button class="btn gray" onclick="go(\'contracts\')">Quay lại</button></div>';
   setContent(h);
@@ -1003,9 +1253,24 @@ VIEWS.landlordContractForm = viewLandlordContractForm; VIEWS.landlordForm = view
    6) HÓA ĐƠN
    ================================================================ */
 var invFilter = { statuses: ['unpaid','partial','paid'] };
+function invTabsHtml(active){
+  var tabs = [['invoices','Danh sách hóa đơn'],['monthlyForm','Tạo hóa đơn hàng tháng'],['specialInvoices','Hóa đơn đặc biệt']];
+  return '<div class="tabs">' + tabs.map(function(t){
+    return '<span class="tab'+(active===t[0]?' on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</span>'; }).join('') + '</div>';
+}
+function markSent(ids, after){
+  if(!ids.length){ toast('Chưa chọn hóa đơn nào để gửi'); return; }
+  api('/invoices/mark-sent', 'POST', { invoiceIds: ids }).then(function(r){
+    return loadColl('invoices').then(function(){
+      toast('Đã đánh dấu ĐÃ GỬI cho ' + r.count + ' hóa đơn');
+      (after || function(){ go(curView, curParams); })();
+    });
+  }).catch(errToast);
+}
 function viewInvoices(){
   var f = invFilter;
   var h = pageTitle('Danh sách hóa đơn');
+  h += invTabsHtml('invoices');
   h += '<div class="filters">' +
     '<div class="fg"><label>Nhà</label>'+selObj('if_house', db.houses, f.houseId||'', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
     '<div class="fg"><label>Phòng</label>'+selObj('if_room', db.rooms, f.roomId||'', function(x){ return x.name + ' (' + houseName(x.houseId) + ')'; }, 'Tất cả')+'</div>' +
@@ -1019,6 +1284,7 @@ function viewInvoices(){
       chk('if_st_paid','Thanh toán hết', f.statuses.indexOf('paid')>=0) + '</span></div>' +
     '<button class="btn" onclick="applyInvFilter()">Lọc</button></div>';
   h += '<div class="btnrow"><button class="btn green" onclick="go(\'monthlyForm\')">Tạo hóa đơn hàng tháng</button>' +
+    '<button class="btn" onclick="go(\'specialInvoices\')">Hóa đơn đặc biệt</button>' +
     '<button class="btn" onclick="go(\'otherForm\')">Tạo hóa đơn đặc biệt</button>' +
     '<button class="btn gray" onclick="go(\'paymentsAll\')">Lịch sử thanh toán</button></div>';
   var list = db.invoices.filter(function(inv){
@@ -1031,15 +1297,16 @@ function viewInvoices(){
     if(f.statuses.indexOf(invStatus(inv)) < 0) return false;
     return true;
   });
-  h += tableHtml(['STT','Mã Hóa đơn','Tên nhà','Tên phòng','Mã Hợp đồng','Loại hóa đơn','Tổng tiền','Đã trả','Giảm giá','Còn lại','Ngày tạo','Trạng thái',''], list.map(function(inv, i){
+  h += tableHtml(['STT','Mã Hóa đơn','Tên nhà','Tên phòng','Mã Hợp đồng','Loại hóa đơn','Tổng tiền','Đã trả','Giảm giá','Còn lại','Ngày tạo','Trạng thái','Gửi',''], list.map(function(inv, i){
     var ct = inv.roomId ? anyContract(inv.roomId) : null;
     var rem = (inv.total||0) - (inv.discount||0) - (inv.paidAmount||0);
     return '<tr><td>'+(i+1)+'</td><td>'+esc(inv.code||'')+'</td><td>'+esc(houseName(inv.houseId))+'</td><td>'+esc(roomName(inv.roomId))+'</td>' +
       '<td>'+esc(ct ? (ct.code||'') : '')+'</td><td>'+(inv.kind==='monthly' ? 'Hóa đơn hàng tháng' : 'Hóa đơn đặc biệt')+'</td>' +
       '<td class="price">'+fmt(inv.total)+'</td><td>'+fmt(inv.paidAmount)+'</td><td>'+fmt(inv.discount)+'</td><td>'+fmt(rem)+'</td>' +
-      '<td>'+fmtDate(inv.createdDate)+'</td><td>'+invBadge(inv)+'</td>' +
+      '<td>'+fmtDate(inv.createdDate)+'</td><td>'+invBadge(inv)+'</td><td>'+sentBadge(inv)+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'invoiceDetail\',{id:\''+inv.id+'\'})">Chi tiết</button>' +
       '<button class="linkbtn" onclick="showPayHistory(\''+inv.id+'\')">Lịch sử thanh toán</button>' +
+      (!inv.sent ? '<button class="linkbtn" onclick="markSent([\''+inv.id+'\'], function(){ viewInvoices(); })">Gửi</button>' : '') +
       '<button class="linkbtn red" onclick="delBtn(\'Hóa đơn '+esc(inv.code||'')+'\',\'invoices\',\''+inv.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có hóa đơn nào');
   setContent(h);
@@ -1069,7 +1336,8 @@ function viewInvoiceDetail(p){
     '<div class="kv"><span>Nhà / Phòng</span><span>'+esc(houseName(inv.houseId))+' / '+esc(roomName(inv.roomId))+'</span></div>' +
     '<div class="kv"><span>Loại</span><span>'+(inv.kind==='monthly' ? 'Hóa đơn hàng tháng ' + (inv.month ? '(' + monthLabel(inv.month) + ')' : '') : 'Hóa đơn đặc biệt — ' + esc(inv.reason||''))+'</span></div>' +
     '<div class="kv"><span>Ngày tạo</span><span>'+fmtDate(inv.createdDate)+'</span></div>' +
-    '<div class="kv"><span>Trạng thái</span><span>'+invBadge(inv)+'</span></div></div>';
+    '<div class="kv"><span>Trạng thái</span><span>'+invBadge(inv)+'</span></div>' +
+    '<div class="kv"><span>Trạng thái gửi</span><span>'+sentBadge(inv)+(inv.sent && inv.sentDate ? ' — ngày gửi ' + fmtDate(inv.sentDate) : '')+'</span></div></div>';
   h += '<h3 class="sec">Tiền dịch vụ</h3>' + tableHtml(['STT','Khoản thu','Chỉ số đầu','Chỉ số cuối','Số lượng','Đơn vị','Đơn giá','Thành tiền'], (inv.lines||[]).map(function(l, i){
     return '<tr><td>'+(i+1)+'</td><td>'+esc(l.label)+'</td><td>'+(l.prev==null?'':l.prev)+'</td><td>'+(l.current==null?'':l.current)+'</td><td>'+l.qty+'</td><td>'+esc(l.unit)+'</td><td>'+fmt(l.unitPrice)+'</td><td class="price">'+fmt(l.amount)+'</td></tr>';
   }).join(''), 'Không có dòng dịch vụ') ;
@@ -1088,6 +1356,7 @@ function viewInvoiceDetail(p){
       '<div class="btnrow"><button class="btn green" onclick="savePayment(\''+inv.id+'\')">Ghi thanh toán (tự tạo phiếu thu)</button></div></div>';
   }
   h += '<div class="btnrow noprint"><button class="btn" onclick="go(\'invoiceEdit\',{id:\''+inv.id+'\'})">Chỉnh sửa</button>' +
+    (!inv.sent ? '<button class="btn green" onclick="markSent([\''+inv.id+'\'], function(){ go(\'invoiceDetail\', { id: \''+inv.id+'\' }); })">Gửi hóa đơn</button>' : '') +
     '<button class="btn gray" onclick="go(\'invoicePrint\',{id:\''+inv.id+'\'})">Xem bản in / Gửi hóa đơn</button>' +
     '<button class="btn gray" onclick="go(\'invoices\')">Quay lại</button></div>';
   setContent(h);
@@ -1163,65 +1432,222 @@ function viewPaymentsAll(){
     setContent(h);
   }).catch(errToast);
 }
+/* ----- Màn Tạo hóa đơn hàng tháng: bảng phòng + tạo lẻ/batch + gửi (SPEC-WEB-2 F) ----- */
+var monthlyState = { month:'', houseId:'', stNew:true, stNotSent:true, stSent:true, batchDone:false, results:null };
+function monthlyInvOf(roomId, month){
+  for(var i=0;i<db.invoices.length;i++){ var v = db.invoices[i];
+    if(v.kind==='monthly' && v.roomId===roomId && v.month===month) return v; }
+  return null;
+}
 function viewMonthlyForm(){
-  var rented = db.rooms.filter(function(r){ return !!activeContract(r.id); });
+  var st = monthlyState;
+  var month = st.month || curMonth();
   var h = pageTitle('Tạo hóa đơn hàng tháng');
-  h += '<form class="form-card" onsubmit="event.preventDefault();saveMonthly()"><div class="fgrid">' +
-    fld('Phòng có hợp đồng', selObj('mf_room', rented, '', function(x){ return x.name + ' — ' + houseName(x.houseId); }), true) +
-    fld('Tháng', inp('mf_month', curMonth(), 'month'), true) +
-    fld('Điện — chỉ số đầu (để trống = tự lấy)', inp('mf_dp', '', 'number')) +
-    fld('Điện — chỉ số cuối', inp('mf_dc', '', 'number')) +
-    fld('Nước — chỉ số đầu', inp('mf_np', '', 'number')) +
-    fld('Nước — chỉ số cuối', inp('mf_nc', '', 'number')) +
-    fld('Số người (ghi đè nếu khác HĐ)', inp('mf_ppl', '', 'number')) +
-    '</div><p style="color:#616161;margin-top:8px">Tiền phòng + các dòng dịch vụ tự tính từ hợp đồng và chỉ số chốt gần nhất.</p>' +
-    '<div class="btnrow"><button class="btn green" type="submit">Tạo hóa đơn</button>' +
-    '<button class="btn gray" type="button" onclick="go(\'invoices\')">Quay lại</button></div></form>';
+  h += invTabsHtml('monthlyForm');
+  h += '<div class="filters">' +
+    '<div class="fg"><label>Thời gian (tháng)</label>'+inp('mb_month', month, 'month')+'</div>' +
+    '<div class="fg"><label>Nhà trọ</label>'+selObj('mb_house', db.houses, st.houseId||'', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
+    '<div class="fg"><label>Trạng thái</label><span>' +
+      chk('mb_st_new','Chưa tạo', st.stNew) + chk('mb_st_notsent','Chưa gửi', st.stNotSent) + chk('mb_st_sent','Đã gửi', st.stSent) + '</span></div>' +
+    '<button class="btn" onclick="applyMonthlyFilter()">Lọc</button></div>';
+  h += '<div class="btnrow">' +
+    '<button class="btn green" onclick="mbCreateSelected()">Tạo hóa đơn</button>' +
+    '<button class="btn" id="mb_batch_btn" onclick="mbCreateAll()">'+(st.batchDone ? 'Tạo lại toàn bộ hóa đơn' : 'Tạo toàn bộ hóa đơn')+'</button>' +
+    '<button class="btn" onclick="mbSendSelected()">Gửi Hóa đơn</button>' +
+    '<button class="btn gray" onclick="go(\'invoices\')">Quay lại DS hóa đơn</button></div>';
+  h += '<div id="mb_results">' + mbResultsHtml() + '</div>';
+  var rooms = db.rooms.filter(function(r){ return !!activeContract(r.id); });
+  if(st.houseId) rooms = rooms.filter(function(r){ return r.houseId === st.houseId; });
+  var rows = rooms.map(function(r){
+    var inv = monthlyInvOf(r.id, month);
+    var stt = !inv ? 'new' : (inv.sent ? 'sent' : 'notsent');
+    return { room: r, inv: inv, stt: stt };
+  }).filter(function(x){
+    if(x.stt==='new' && !st.stNew) return false;
+    if(x.stt==='notsent' && !st.stNotSent) return false;
+    if(x.stt==='sent' && !st.stSent) return false;
+    return true;
+  });
+  h += '<div class="tblwrap"><table><thead><tr><th>STT</th><th>Tên nhà</th><th>Tên phòng</th><th>Hóa đơn tháng</th><th>Trạng thái</th>' +
+    '<th><label class="chk" style="padding:0"><input type="checkbox" id="mb_all" onchange="document.querySelectorAll(\'.mb_chk\').forEach(function(x){ x.checked = this.checked; }.bind(this))"> Tất cả/Bỏ tất cả</label></th><th></th></tr></thead><tbody>' +
+    (rows.length ? rows.map(function(x, i){
+      var label = x.stt==='new' ? '<span class="badge b-unpaid">Chưa tạo</span>' : (x.stt==='sent' ? '<span class="badge b-paid">Đã gửi</span>' : '<span class="badge b-partial">Chưa gửi</span>');
+      return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(x.room.houseId))+'</td><td><b>'+esc(x.room.name)+'</b></td><td>'+esc(month)+'</td><td>'+label+'</td>' +
+        '<td><input type="checkbox" class="mb_chk" value="'+x.room.id+'" data-inv="'+(x.inv?x.inv.id:'')+'"></td>' +
+        '<td class="act">'+(x.inv ? '<button class="linkbtn" onclick="go(\'invoiceDetail\',{id:\''+x.inv.id+'\'})">Chi tiết</button>' : '')+'</td></tr>';
+    }).join('') : '<tr><td colspan="7"><div class="empty-note">Không có phòng nào có hợp đồng đang hiệu lực khớp bộ lọc</div></td></tr>') +
+    '</tbody></table></div>';
   setContent(h);
 }
-function saveMonthly(){
-  var body = { roomId: val('mf_room'), month: val('mf_month') };
-  if(val('mf_dp') !== '') body.dienPrev = num(val('mf_dp'));
-  if(val('mf_dc') !== '') body.dienCurr = num(val('mf_dc'));
-  if(val('mf_np') !== '') body.nuocPrev = num(val('mf_np'));
-  if(val('mf_nc') !== '') body.nuocCurr = num(val('mf_nc'));
-  if(val('mf_ppl') !== '') body.people = num(val('mf_ppl'));
-  api('/invoices/monthly', 'POST', body).then(function(inv){
-    return loadColl('invoices').then(function(){ toast('Đã tạo hóa đơn tháng'); go('invoiceDetail', { id: inv.id }); });
+function mbResultsHtml(){
+  var res = monthlyState.results;
+  if(!res || !res.length) return '';
+  return '<div class="card" style="margin-bottom:14px"><h3 class="sec" style="margin-top:0">Kết quả tạo hóa đơn tháng '+esc(monthlyState.month || curMonth())+'</h3>' +
+    tableHtml(['Phòng','Kết quả'], res.map(function(r){
+      return '<tr><td>'+esc(roomName(r.roomId))+'</td><td>'+(r.ok ? '<span class="badge b-paid">Đã tạo</span>' : '<span class="badge b-unpaid">Lỗi: '+esc(r.error||'')+'</span>')+'</td></tr>';
+    }).join('')) + '</div>';
+}
+function applyMonthlyFilter(){
+  monthlyState.month = val('mb_month'); monthlyState.houseId = val('mb_house');
+  monthlyState.stNew = isChk('mb_st_new'); monthlyState.stNotSent = isChk('mb_st_notsent'); monthlyState.stSent = isChk('mb_st_sent');
+  viewMonthlyForm();
+}
+function mbSelected(){
+  return Array.prototype.map.call(document.querySelectorAll('.mb_chk:checked'), function(x){
+    return { roomId: x.value, invoiceId: x.getAttribute('data-inv') || '' };
+  });
+}
+function mbCreateSelected(){
+  var month = monthlyState.month || curMonth();
+  var targets = mbSelected().filter(function(s){ return !s.invoiceId; });
+  if(!targets.length){ toast('Hãy chọn ít nhất 1 phòng CHƯA TẠO hóa đơn'); return; }
+  var results = [];
+  var chain = Promise.resolve();
+  targets.forEach(function(s){
+    chain = chain.then(function(){
+      return api('/invoices/monthly', 'POST', { roomId: s.roomId, month: month })
+        .then(function(inv){ results.push({ roomId: s.roomId, ok: true, invoiceId: inv.id }); })
+        .catch(function(e){ results.push({ roomId: s.roomId, ok: false, error: e.message }); });
+    });
+  });
+  chain.then(function(){ return loadColl('invoices'); }).then(function(){
+    monthlyState.results = results; viewMonthlyForm();
+    toast('Đã xử lý ' + results.length + ' phòng: tạo được ' + results.filter(function(r){ return r.ok; }).length);
   }).catch(errToast);
 }
-function viewOtherForm(){
-  var h = pageTitle('Tạo hóa đơn đặc biệt');
-  h += '<form class="form-card" onsubmit="event.preventDefault();saveOther()"><div class="fgrid">' +
-    fld('Lý do thu', inp('of_reason', ''), true) +
-    fld('Số tiền thu (vnđ)', inp('of_amount', 0, 'number'), true) +
-    fld('Đơn vị', sel('of_unit', [['phong','theo phòng'],['nguoi','theo người']], 'phong')) +
-    fld('Ghi chú', inp('of_note', '')) + '</div>' +
-    '<h3 class="sec">Chọn phòng nhận hóa đơn</h3><div>' +
-    '<label class="chk"><input type="checkbox" id="of_all" onchange="document.querySelectorAll(\'.of_room\').forEach(function(x){ x.checked = this.checked; }.bind(this))"> Tất cả / Bỏ tất cả</label><br>' +
-    db.rooms.map(function(r){
-      return '<label class="chk"><input type="checkbox" class="of_room" value="'+r.id+'"> '+esc(r.name)+' — '+esc(houseName(r.houseId))+'</label>';
-    }).join('') + '</div>' +
-    '<div class="btnrow"><button class="btn green" type="submit">Tạo hóa đơn đặc biệt</button>' +
-    '<button class="btn gray" type="button" onclick="go(\'invoices\')">Quay lại</button></div></form>';
+function mbCreateAll(){
+  if(monthlyState.batchDone){
+    openModal('<h3>Tạo lại toàn bộ hóa đơn</h3>' +
+      '<p style="font-size:14px">Chức năng tạo tất cả hóa đơn đã được thực hiện. Bạn có chắc chắn muốn tạo lại không?</p>' +
+      '<div class="btnrow"><button class="btn gray" onclick="closeModal()">Hủy</button>' +
+      '<button class="btn green" onclick="closeModal();mbRunBatch()">Tạo lại</button></div>');
+    return;
+  }
+  mbRunBatch();
+}
+function mbRunBatch(){
+  var month = monthlyState.month || curMonth();
+  var btn = document.getElementById('mb_batch_btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Đang tạo hóa đơn...'; }
+  api('/invoices/monthly-batch', 'POST', { month: month }).then(function(r){
+    return loadColl('invoices').then(function(){
+      monthlyState.batchDone = true;
+      monthlyState.results = r.results;
+      viewMonthlyForm();
+      toast('Batch xong: tạo mới ' + r.created + ' hóa đơn, ' + r.failed + ' phòng lỗi/bỏ qua');
+    });
+  }).catch(function(e){ errToast(e); viewMonthlyForm(); });
+}
+function mbSendSelected(){
+  var ids = mbSelected().filter(function(s){ return s.invoiceId; }).map(function(s){ return s.invoiceId; });
+  var unsent = ids.filter(function(id){ var v = byId(db.invoices, id); return v && !v.sent; });
+  if(!unsent.length){ toast('Hãy chọn ít nhất 1 hóa đơn ĐÃ TẠO (chưa gửi)'); return; }
+  markSent(unsent, function(){ viewMonthlyForm(); });
+}
+/* ----- Hóa đơn đặc biệt: danh sách + gửi (SPEC-WEB-2 F.2) ----- */
+var specialFilter = { reason:'', from:'', to:'', notSent:true, sent:true };
+function viewSpecialInvoices(){
+  var f = specialFilter;
+  var h = pageTitle('Danh sách hóa đơn đặc biệt');
+  h += invTabsHtml('specialInvoices');
+  h += '<div class="filters">' +
+    '<div class="fg"><label>Lý do thu</label>'+inp('sf_reason', f.reason, 'text', 'placeholder="Tìm lý do..."')+'</div>' +
+    '<div class="fg"><label>Ngày tạo từ</label>'+inp('sf_from', f.from, 'date')+'</div>' +
+    '<div class="fg"><label>đến</label>'+inp('sf_to', f.to, 'date')+'</div>' +
+    '<div class="fg"><label>Trạng thái gửi</label><span>' +
+      chk('sf_notsent','Chưa gửi', f.notSent) + chk('sf_sent','Đã gửi', f.sent) + '</span></div>' +
+    '<button class="btn" onclick="specialFilter={reason:val(\'sf_reason\'),from:val(\'sf_from\'),to:val(\'sf_to\'),notSent:isChk(\'sf_notsent\'),sent:isChk(\'sf_sent\')};viewSpecialInvoices()">Lọc</button></div>';
+  h += '<div class="btnrow"><button class="btn green" onclick="go(\'otherForm\')">Tạo hóa đơn đặc biệt</button>' +
+    '<button class="btn" onclick="spSendSelected()">Gửi Hóa đơn</button></div>';
+  var list = db.invoices.filter(function(inv){
+    if(inv.kind !== 'other') return false;
+    if(f.reason && (inv.reason||'').toLowerCase().indexOf(f.reason.toLowerCase())<0) return false;
+    if(f.from && (inv.createdDate||'') < f.from) return false;
+    if(f.to && (inv.createdDate||'') > f.to) return false;
+    if(inv.sent && !f.sent) return false;
+    if(!inv.sent && !f.notSent) return false;
+    return true;
+  });
+  h += '<div class="tblwrap"><table><thead><tr><th>STT</th><th>Tên nhà</th><th>Tên phòng</th><th>Ngày tạo</th><th>Trạng thái</th><th>Lý do thu</th><th>Số tiền thu</th>' +
+    '<th><label class="chk" style="padding:0"><input type="checkbox" id="sp_all" onchange="document.querySelectorAll(\'.sp_chk\').forEach(function(x){ x.checked = this.checked; }.bind(this))"> Tất cả/Bỏ tất cả</label></th><th></th></tr></thead><tbody>' +
+    (list.length ? list.map(function(inv, i){
+      return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(inv.houseId))+'</td><td>'+esc(roomName(inv.roomId))+'</td><td>'+fmtDate(inv.createdDate)+'</td>' +
+        '<td>'+sentBadge(inv)+'</td><td>'+esc(inv.reason||'')+'</td><td class="price">'+fmt(inv.total)+'</td>' +
+        '<td><input type="checkbox" class="sp_chk" value="'+inv.id+'"></td>' +
+        '<td class="act"><button class="linkbtn" onclick="go(\'invoiceDetail\',{id:\''+inv.id+'\'})">Chi tiết</button></td></tr>';
+    }).join('') : '<tr><td colspan="9"><div class="empty-note">Chưa có hóa đơn đặc biệt nào</div></td></tr>') +
+    '</tbody></table></div>';
   setContent(h);
 }
-function saveOther(){
-  var amount = num(val('of_amount')), unit = val('of_unit'), reason = val('of_reason');
-  var roomIds = Array.prototype.map.call(document.querySelectorAll('.of_room:checked'), function(x){ return x.value; });
-  if(!roomIds.length){ toast('Hãy chọn ít nhất 1 phòng'); return; }
+function spSendSelected(){
+  var ids = Array.prototype.map.call(document.querySelectorAll('.sp_chk:checked'), function(x){ return x.value; });
+  var unsent = ids.filter(function(id){ var v = byId(db.invoices, id); return v && !v.sent; });
+  if(!unsent.length){ toast('Hãy chọn ít nhất 1 hóa đơn chưa gửi'); return; }
+  markSent(unsent, function(){ viewSpecialInvoices(); });
+}
+/* ----- Tạo hóa đơn đặc biệt: lọc + bảng phòng + tạo cho phòng chọn / cho tất cả (SPEC-WEB-2 F.3) ----- */
+function viewOtherForm(){
+  var h = pageTitle('Tạo hóa đơn đặc biệt');
+  h += invTabsHtml('specialInvoices');
+  h += '<form class="form-card" onsubmit="event.preventDefault();"><div class="fgrid">' +
+    fld('Lý do thu', inp('of_reason', ''), true) +
+    fld('Số tiền thu (vnđ)', inp('of_amount', 0, 'number'), true) +
+    fld('Ghi chú', inp('of_note', '')) + '</div>' +
+    '<h3 class="sec">Chọn người nhận hóa đơn</h3>' +
+    '<div class="filters" style="box-shadow:none;padding:0">' +
+    '<div class="fg"><label>Nhà trọ</label>'+selObj('of_house', db.houses, '', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
+    '<div class="fg"><label>Phòng trọ</label>'+inp('of_roomq', '', 'text', 'placeholder="Tìm tên phòng..." oninput="filterOtherRooms()"')+'</div></div>' +
+    '<div class="tblwrap"><table><thead><tr><th>STT</th><th>Tên nhà</th><th>Tên phòng</th>' +
+    '<th><label class="chk" style="padding:0"><input type="checkbox" id="of_all" onchange="document.querySelectorAll(\'.of_room\').forEach(function(x){ x.checked = this.checked; }.bind(this))"> Tất cả/Bỏ tất cả</label></th></tr></thead>' +
+    '<tbody id="of_room_rows"></tbody></table></div>' +
+    '<div class="btnrow"><button class="btn green" type="button" onclick="saveOther(false)">Tạo hóa đơn đặc biệt</button>' +
+    '<button class="btn" type="button" onclick="saveOther(true)">Tạo hóa đơn đặc biệt cho tất cả</button>' +
+    '<button class="btn gray" type="button" onclick="go(\'specialInvoices\')">Quay lại</button></div></form>';
+  setContent(h);
+  var hs = document.getElementById('of_house');
+  hs.onchange = filterOtherRooms;
+  filterOtherRooms();
+}
+function filterOtherRooms(){
+  var houseId = val('of_house'), q = (val('of_roomq') || '').toLowerCase();
+  var rows = db.rooms.filter(function(r){
+    if(houseId && r.houseId !== houseId) return false;
+    if(q && r.name.toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  var tb = document.getElementById('of_room_rows'); if(!tb) return;
+  tb.innerHTML = rows.length ? rows.map(function(r, i){
+    return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(r.houseId))+'</td><td><b>'+esc(r.name)+'</b></td>' +
+      '<td><input type="checkbox" class="of_room" value="'+r.id+'"></td></tr>';
+  }).join('') : '<tr><td colspan="4"><div class="empty-note">Không có phòng nào khớp</div></td></tr>';
+}
+function saveOther(forAll){
+  var amount = num(val('of_amount'));
+  var reason = val('of_reason');
+  var note = val('of_note');
+  if(!reason){ toast('Nhập lý do thu'); return; }
+  if(!amount){ toast('Nhập số tiền thu'); return; }
+  var roomIds;
+  if(forAll){
+    var seen = {};
+    roomIds = db.rooms.filter(function(r){ return !!activeContract(r.id); }).map(function(r){ return r.id; });
+    if(!roomIds.length){ toast('Không có phòng nào có hợp đồng đang hiệu lực'); return; }
+  } else {
+    roomIds = Array.prototype.map.call(document.querySelectorAll('.of_room:checked'), function(x){ return x.value; });
+    if(!roomIds.length){ toast('Hãy chọn ít nhất 1 phòng'); return; }
+  }
+  var fullReason = note ? (reason + ' — ' + note) : reason;
   var jobs = roomIds.map(function(rid){
-    var room = byId(db.rooms, rid), ct = activeContract(rid);
-    var qty = unit === 'nguoi' ? (ct ? (ct.people || 1) : 1) : 1;
-    return api('/invoices', 'POST', { kind: 'other', houseId: room.houseId, roomId: rid, reason: reason,
-      createdDate: today(), lines: [{ label: reason, unitPrice: amount, unit: unit === 'nguoi' ? 'người' : 'phòng', qty: qty, amount: amount * qty }] });
+    var room = byId(db.rooms, rid);
+    return api('/invoices', 'POST', { kind: 'other', houseId: room.houseId, roomId: rid, reason: fullReason,
+      createdDate: today(), lines: [{ label: reason, unitPrice: amount, unit: 'phòng', qty: 1, amount: amount }] });
   });
   Promise.all(jobs).then(function(){ return loadColl('invoices'); })
-    .then(function(){ toast('Đã tạo ' + jobs.length + ' hóa đơn đặc biệt'); go('invoices'); }).catch(errToast);
+    .then(function(){ toast('Đã tạo ' + jobs.length + ' hóa đơn đặc biệt'); go('specialInvoices'); }).catch(errToast);
 }
 VIEWS.invoices = viewInvoices; VIEWS.invoiceDetail = viewInvoiceDetail; VIEWS.invoiceEdit = viewInvoiceEdit;
 VIEWS.invoicePrint = viewInvoicePrint; VIEWS.paymentsAll = viewPaymentsAll;
-VIEWS.monthlyForm = viewMonthlyForm; VIEWS.otherForm = viewOtherForm;
+VIEWS.monthlyForm = viewMonthlyForm; VIEWS.otherForm = viewOtherForm; VIEWS.specialInvoices = viewSpecialInvoices;
 
 /* ================================================================
    7) TÀI CHÍNH — Thu | Chi | Thống kê
@@ -1267,6 +1693,39 @@ function finMatch(f, houseId, roomId, pers1, pers2, created, paid){
   if(f.pt && (paid||'') > f.pt) return false;
   return true;
 }
+function showReceiptDetail(id){
+  var r = byId(db.receipts, id); if(!r) return;
+  var inv = r.invoiceId ? byId(db.invoices, r.invoiceId) : null;
+  openModal('<h3>Chi tiết phiếu thu ' + esc(r.code || '') + '</h3><div class="card" style="box-shadow:none;padding:0">' +
+    '<div class="kv"><span>Mã phiếu thu</span><span>'+esc(r.code||'')+'</span></div>' +
+    '<div class="kv"><span>Khoản thu</span><span>'+esc(r.title)+'</span></div>' +
+    '<div class="kv"><span>Số tiền thu</span><span>'+fmt(r.amount)+'</span></div>' +
+    '<div class="kv"><span>Nhà / Phòng</span><span>'+esc(houseName(r.houseId))+' / '+esc(roomName(r.roomId))+'</span></div>' +
+    '<div class="kv"><span>Mã hợp đồng</span><span>'+esc(r.contractCode||'')+'</span></div>' +
+    '<div class="kv"><span>Mã hóa đơn</span><span>'+esc(inv ? (inv.code||'') : '')+'</span></div>' +
+    '<div class="kv"><span>Ngày tạo</span><span>'+fmtDate(r.createdDate)+'</span></div>' +
+    '<div class="kv"><span>Ngày thu</span><span>'+fmtDate(r.collectDate)+'</span></div>' +
+    '<div class="kv"><span>Người thu</span><span>'+esc(r.collector||'')+'</span></div>' +
+    '<div class="kv"><span>Người nộp</span><span>'+esc(r.payer||'')+'</span></div>' +
+    '<div class="kv"><span>Ghi chú</span><span>'+esc(r.note||'')+'</span></div></div>' +
+    '<div class="btnrow"><button class="btn gray" onclick="closeModal()">Đóng</button></div>');
+}
+function showExpenseDetail(id){
+  var e = byId(db.expenses, id); if(!e) return;
+  openModal('<h3>Chi tiết phiếu chi ' + esc(e.code || '') + '</h3><div class="card" style="box-shadow:none;padding:0">' +
+    '<div class="kv"><span>Mã phiếu chi</span><span>'+esc(e.code||'')+'</span></div>' +
+    '<div class="kv"><span>Khoản chi</span><span>'+esc(e.title)+'</span></div>' +
+    '<div class="kv"><span>Số tiền chi</span><span>'+fmt(e.amount)+'</span></div>' +
+    '<div class="kv"><span>Nhà / Phòng</span><span>'+esc(houseName(e.houseId))+' / '+esc(roomName(e.roomId))+'</span></div>' +
+    '<div class="kv"><span>Mã hợp đồng</span><span>'+esc(e.contractCode||'')+'</span></div>' +
+    '<div class="kv"><span>Ngày tạo</span><span>'+fmtDate(e.date)+'</span></div>' +
+    '<div class="kv"><span>Ngày chi</span><span>'+fmtDate(e.payDate || e.date)+'</span></div>' +
+    '<div class="kv"><span>Người chi</span><span>'+esc(e.spender||'')+'</span></div>' +
+    '<div class="kv"><span>Người nhận</span><span>'+esc(e.receiverName||'')+'</span></div>' +
+    '<div class="kv"><span>SDT người nhận</span><span>'+esc(e.receiverPhone||'')+'</span></div>' +
+    '<div class="kv"><span>Ghi chú</span><span>'+esc(e.note||'')+'</span></div></div>' +
+    '<div class="btnrow"><button class="btn gray" onclick="closeModal()">Đóng</button></div>');
+}
 function financeThuHtml(){
   var f = finThuF;
   var h = finFilterHtml('ft', f, ['Người thu','Người nộp','Ngày thu']);
@@ -1277,7 +1736,8 @@ function financeThuHtml(){
     return '<tr><td>'+(i+1)+'</td><td>'+esc(r.code||'')+'</td><td>'+esc(houseName(r.houseId))+'</td><td>'+esc(roomName(r.roomId))+'</td>' +
       '<td>'+esc(r.contractCode||'')+'</td><td>'+esc(r.title)+'</td><td>'+fmtDate(r.createdDate)+'</td><td>'+fmtDate(r.collectDate)+'</td>' +
       '<td>'+esc(r.collector)+'</td><td>'+esc(r.payer)+'</td><td class="price">'+fmt(r.amount)+'</td>' +
-      '<td class="act"><button class="linkbtn" onclick="go(\'receiptForm\',{id:\''+r.id+'\'})">Sửa</button>' +
+      '<td class="act"><button class="linkbtn" onclick="showReceiptDetail(\''+r.id+'\')">Chi tiết</button>' +
+      '<button class="linkbtn" onclick="go(\'receiptForm\',{id:\''+r.id+'\'})">Sửa</button>' +
       '<button class="linkbtn red" onclick="delBtn(\'Phiếu thu '+esc(r.code||'')+'\',\'receipts\',\''+r.id+'\',function(){viewFinance();})">Xóa</button></td></tr>';
   }).join('') + '<tr class="total"><td colspan="10">Tổng thu</td><td>'+fmt(total)+'</td><td></td></tr>');
   return h;
@@ -1292,7 +1752,8 @@ function financeChiHtml(){
     return '<tr><td>'+(i+1)+'</td><td>'+esc(e.code||'')+'</td><td>'+esc(houseName(e.houseId))+'</td><td>'+esc(roomName(e.roomId))+'</td>' +
       '<td>'+esc(e.contractCode||'')+'</td><td>'+esc(e.title)+'</td><td>'+fmtDate(e.date)+'</td><td>'+fmtDate(e.payDate || e.date)+'</td>' +
       '<td>'+esc(e.spender||'')+'</td><td>'+esc(e.receiverName||'')+'</td><td>'+esc(e.receiverPhone||'')+'</td><td class="price">'+fmt(e.amount)+'</td>' +
-      '<td class="act"><button class="linkbtn" onclick="go(\'expenseForm\',{id:\''+e.id+'\'})">Sửa</button>' +
+      '<td class="act"><button class="linkbtn" onclick="showExpenseDetail(\''+e.id+'\')">Chi tiết</button>' +
+      '<button class="linkbtn" onclick="go(\'expenseForm\',{id:\''+e.id+'\'})">Sửa</button>' +
       '<button class="linkbtn red" onclick="delBtn(\'Phiếu chi '+esc(e.code||e.title)+'\',\'expenses\',\''+e.id+'\',function(){viewFinance();})">Xóa</button></td></tr>';
   }).join('') + '<tr class="total"><td colspan="11">Tổng chi</td><td>'+fmt(total)+'</td><td></td></tr>');
   return h;
@@ -1474,9 +1935,7 @@ function saveAssignment(){
     .then(function(){ toast('Đã gán chức vụ'); viewStaff(); }).catch(errToast);
 }
 function staffPositionsHtml(){
-  var h = '<form class="filters" onsubmit="event.preventDefault();savePosition()">' +
-    '<div class="fg"><label>Tên chức vụ mới</label>'+inp('pos_name', '', 'text', 'placeholder="VD: Lễ tân"')+'</div>' +
-    '<button class="btn green">+ Thêm chức vụ</button></form>';
+  var h = '<div class="btnrow"><button class="btn green" onclick="openAddPosition()">+ Thêm Chức vụ</button></div>';
   h += tableHtml(['STT','Chức vụ',''], db.positions.map(function(p2, i){
     return '<tr><td>'+(i+1)+'</td><td><b>'+esc(p2.name)+'</b></td>' +
       '<td class="act"><button class="linkbtn" onclick="renamePosition(\''+p2.id+'\',\''+esc(p2.name)+'\')">Sửa tên</button>' +
@@ -1484,10 +1943,14 @@ function staffPositionsHtml(){
   }).join(''), 'Chưa có chức vụ nào');
   return h;
 }
-function savePosition(){
-  if(!val('pos_name')){ toast('Nhập tên chức vụ'); return; }
-  createRec('positions', { name: val('pos_name'), permissions: { thongKe: false } })
-    .then(function(){ toast('Đã thêm chức vụ'); viewStaff(); }).catch(errToast);
+function openAddPosition(){
+  openModal('<h3>Thêm Chức vụ</h3><label class="fl">Chức vụ</label><input id="pos_name" placeholder="VD: Lễ tân">' +
+    '<div class="btnrow"><button class="btn gray" onclick="closeModal()">Hủy</button><button class="btn green" id="pos_add">Thêm Chức vụ</button></div>');
+  document.getElementById('pos_add').onclick = function(){
+    if(!val('pos_name')){ toast('Nhập tên chức vụ'); return; }
+    createRec('positions', { name: val('pos_name'), permissions: { thongKe: false } })
+      .then(function(){ closeModal(); toast('Đã thêm chức vụ'); viewStaff(); }).catch(errToast);
+  };
 }
 function renamePosition(id, oldName){
   openModal('<h3>Sửa tên chức vụ</h3><label class="fl">Tên chức vụ</label><input id="pos_newname" value="'+esc(oldName)+'">' +
@@ -1578,7 +2041,7 @@ function viewNotifications(){
       }).join('') + '</div>';
     var items = (data.items || []).filter(function(n){ return settings[n.type] !== false; });
     h += items.length ? items.map(function(n){
-      return '<div class="notif-item"><div class="time">'+esc(n.time)+'</div><div>'+esc(n.content)+'</div></div>';
+      return '<div class="notif-item"><div class="time">'+esc(fmtDT(n.time))+'</div><div>'+esc(n.content)+'</div></div>';
     }).join('') : '<div class="empty-note">Chưa có thông báo nào</div>';
     setContent(h);
   }).catch(errToast);
@@ -1644,9 +2107,11 @@ function viewAssetForm(p){
   var h = pageTitle(a ? 'Cập nhật tài sản' : 'Thêm tài sản');
   h += '<form class="form-card" onsubmit="event.preventDefault();saveAsset(\''+(a?a.id:'')+'\')"><div class="fgrid">' +
     fld('Nhà', selObj('a_house', db.houses, a?a.houseId:'', function(x){ return (x.name||x.address); }), true) +
+    fld('Đối tượng', sel('a_owner', [['room','Tài sản trong phòng'],['landlord','Tài sản chủ nhà']], a?a.ownerType:'room')) +
     fld('Phòng', selObj('a_room', db.rooms, a?a.roomId:'', function(x){ return x.name + ' (' + houseName(x.houseId) + ')'; }, '-- Cả nhà --')) +
-    fld('Mã tài sản', inp('a_code', a?a.code:'')) + fld('Loại tài sản', inp('a_type', a?a.type:''), true) +
-    fld('Trạng thái', sel('a_status', ['Mới','Như mới','Tốt','Cũ','Hỏng','Mất'], a?a.status:'Tốt')) +
+    fld('Mã tài sản (để trống = tự sinh)', inp('a_code', a?a.code:'')) + fld('Loại tài sản', inp('a_type', a?a.type:''), true) +
+    fld('Trạng thái', sel('a_status', ASSET_STATUSES, a?a.status:'Tốt')) +
+    fld('Note', inp('a_note', a?a.note:'')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
     '<button class="btn gray" type="button" onclick="go(\'assets\')">Quay lại</button></div></form>';
   setContent(h);
@@ -1654,7 +2119,8 @@ function viewAssetForm(p){
 function saveAsset(id){
   var room = byId(db.rooms, val('a_room'));
   var data = { houseId: room ? room.houseId : val('a_house'), roomId: val('a_room') || null,
-    code: val('a_code'), type: val('a_type'), status: val('a_status') };
+    code: val('a_code'), ownerType: val('a_owner'), type: val('a_type'), status: val('a_status'),
+    note: val('a_note') };
   var pr = id ? updateRec('assets', id, data) : createRec('assets', data);
   pr.then(function(){ toast('Đã lưu tài sản'); go('assets'); }).catch(errToast);
 }
@@ -1728,9 +2194,9 @@ function saveUnit(){
 function viewCustomers(){
   var h = pageTitle('Khách thuê');
   h += '<div class="btnrow"><button class="btn green" onclick="go(\'customerForm\')">+ Thêm khách</button></div>';
-  h += tableHtml(['STT','Họ tên','SDT','Giới tính','Ngày sinh','Email','CMND','Phòng đang ở',''], db.customers.map(function(c, i){
+  h += tableHtml(['STT','Họ tên','SDT','Giới tính','Ngày sinh','Nghề nghiệp','Email','CMND','Địa chỉ thường trú','Phòng đang ở',''], db.customers.map(function(c, i){
     var ct = db.contracts.filter(function(x){ return x.customerId === c.id && x.status === 'active'; })[0];
-    return '<tr><td>'+(i+1)+'</td><td><b>'+esc(c.name)+'</b></td><td>'+esc(c.phone)+'</td><td>'+esc(c.gender)+'</td><td>'+fmtDate(c.dob)+'</td><td>'+esc(c.email||'')+'</td><td>'+esc(c.idCard||'')+'</td><td>'+(ct ? esc(roomName(ct.roomId)) : '—')+'</td>' +
+    return '<tr><td>'+(i+1)+'</td><td><b>'+esc(c.name)+'</b></td><td>'+esc(c.phone)+'</td><td>'+esc(c.gender)+'</td><td>'+fmtDate(c.dob)+'</td><td>'+esc(c.job||'')+'</td><td>'+esc(c.email||'')+'</td><td>'+esc(c.idCard||'')+'</td><td>'+esc(c.permanentAddress||'')+'</td><td>'+(ct ? esc(roomName(ct.roomId)) : '—')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'customerForm\',{id:\''+c.id+'\'})">Sửa</button>' +
       '<button class="linkbtn red" onclick="delBtn(\'Khách '+esc(c.name)+'\',\'customers\',\''+c.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có khách nào');
@@ -1739,17 +2205,14 @@ function viewCustomers(){
 function viewCustomerForm(p){
   var c = p.id ? byId(db.customers, p.id) : null;
   var h = pageTitle(c ? 'Sửa khách thuê' : 'Thêm khách thuê');
-  h += '<form class="form-card" onsubmit="event.preventDefault();saveCustomer(\''+(c?c.id:'')+'\')"><div class="fgrid">' +
-    fld('Họ tên', inp('cm_name', c?c.name:''), true) + fld('Ngày sinh', inp('cm_dob', c?c.dob:'', 'date')) +
-    fld('SDT', inp('cm_phone', c?c.phone:'')) + fld('Giới tính', sel('cm_gender', ['Nam','Nữ','Khác'], c?c.gender:'Nam')) +
-    fld('Email', inp('cm_email', c?c.email:'')) + fld('CMND/CCCD', inp('cm_idcard', c?c.idCard:'')) +
-    '</div><div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
+  h += '<form class="form-card" onsubmit="event.preventDefault();saveCustomer(\''+(c?c.id:'')+'\')">' +
+    custFieldsHtml('cm', c || {}) +
+    '<div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
     '<button class="btn gray" type="button" onclick="go(\'customers\')">Quay lại</button></div></form>';
   setContent(h);
 }
 function saveCustomer(id){
-  var data = { name: val('cm_name'), dob: val('cm_dob') || null, phone: val('cm_phone'),
-    gender: val('cm_gender'), email: val('cm_email'), idCard: val('cm_idcard') };
+  var data = collectCust('cm');
   var pr = id ? updateRec('customers', id, data) : createRec('customers', data);
   pr.then(function(){ toast('Đã lưu khách'); go('customers'); }).catch(errToast);
 }

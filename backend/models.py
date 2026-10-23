@@ -35,7 +35,8 @@ class House(TimestampMixin, Base):
     bedrooms = Column(Integer, default=0)
     bathrooms = Column(Integer, default=0)
     type = Column(String, default="own")  # own | rented
-    businessType = Column("business_type", String, default="")  # Homestay|Chung cư mini|Phòng đơn|Phòng trọ
+    businessType = Column("business_type", String, default="")  # Loại nhà trọ: Chung cư mini|Nhà nguyên căn|Homestay|Phòng đơn|Phòng trọ
+    rentalMode = Column("rental_mode", String, default="Bao phòng")  # Hình thức cho thuê: Bao phòng | Bao người (SPEC-WEB-2 A)
     description = Column(Text, default="")
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=True)
 
@@ -54,6 +55,7 @@ class Room(TimestampMixin, Base):
     price = Column(Integer, default=0)
     minDeposit = Column("min_deposit", Integer, default=0)
     maxPeople = Column("max_people", Integer, default=0)
+    subRooms = Column("sub_rooms", Integer, default=0)  # Số phòng con bên trong (SPEC-WEB-2 B)
     payMonths = Column("pay_months", Integer, default=1)
     payFromDay = Column("pay_from_day", Integer, default=1)
     payToDay = Column("pay_to_day", Integer, default=3)
@@ -70,6 +72,12 @@ class Customer(TimestampMixin, Base):
     gender = Column(String, default="Nam")
     email = Column(String, default="")
     idCard = Column("id_card", String, default="")
+    # Hồ sơ đầy đủ (SPEC-WEB-2 C)
+    job = Column(String, default="")                       # Nghề nghiệp
+    maritalStatus = Column("marital_status", String, default="")  # Tình trạng hôn nhân
+    permanentAddress = Column("permanent_address", String, default="")  # Địa chỉ thường trú
+    currentAddress = Column("current_address", String, default="")      # Địa chỉ hiện tại
+    note = Column(Text, default="")                        # Ghi chú
 
 
 class Contract(TimestampMixin, Base):
@@ -133,6 +141,8 @@ class Invoice(TimestampMixin, Base):
     # status được ĐỒNG BỘ từ total/discount/paidAmount (xem business.invoice_status):
     # paid (hết) | partial (thiếu) | unpaid (chưa thanh toán)
     status = Column(String, default="unpaid")
+    sent = Column(Boolean, default=False)      # Đã gửi hóa đơn cho khách chưa (SPEC-WEB-2 F)
+    sentDate = Column("sent_date", Date, nullable=True)  # Ngày gửi
     createdDate = Column("created_date", Date, nullable=True)
     reason = Column(String, nullable=True)
     lines = relationship("InvoiceLine", back_populates="invoice",
@@ -203,9 +213,11 @@ class Asset(TimestampMixin, Base):
     id = Column(String, primary_key=True, default=_uid)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=True, index=True)
-    code = Column(String, default="")
+    code = Column(String, default="")  # Mã tài sản 8 số tự sinh (00000001...)
+    ownerType = Column("owner_type", String, default="room")  # room (trong phòng) | landlord (tài sản chủ nhà) — SPEC-WEB-2 A
     type = Column(String, default="")
     status = Column(String, default="Tốt")  # Mới|Như mới|Tốt|Cũ|Hỏng|Mất
+    note = Column(Text, default="")
 
 
 class Unit(TimestampMixin, Base):
@@ -259,11 +271,18 @@ class Deposit(TimestampMixin, Base):
     code = Column(String, default="")  # Mã HĐ cọc: phòng + YYYYMMDDHHmmss (SPEC-WEB)
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=False, index=True)
+    customerId = Column("customer_id", String, ForeignKey("customers.id"), nullable=True, index=True)  # SPEC-WEB-2 D
     customerName = Column("customer_name", String, default="")
     phone = Column(String, default="")
     amount = Column(Integer, default=0)  # Tiền giữ phòng
     rentPrice = Column("rent_price", Integer, default=0)  # Giá thuê
     vacantDays = Column("vacant_days", Integer, default=0)  # Thời gian trống phòng (ngày)
+    payMonths = Column("pay_months", Integer, default=1)      # Số tháng thanh toán 1 lần (SPEC-WEB-2 D)
+    payDayFrom = Column("pay_day_from", Integer, default=1)   # Thời gian thanh toán từ ngày
+    payDayTo = Column("pay_day_to", Integer, default=3)       # đến ngày
+    # Cấu hình dịch vụ tại thời điểm cọc (SPEC-WEB-2 D):
+    # {dien:{price,unit}, nuoc:{price,unit}, xeMay:{count,fee}, oTo:{count,fee}, xeDap:{count,fee}}
+    serviceConfig = Column("service_config", JSON, default=dict)
     date = Column(Date, nullable=True)  # Ngày cọc
     moveInDate = Column("move_in_date", Date, nullable=True)   # Ngày vào
     moveOutDate = Column("move_out_date", Date, nullable=True)  # Ngày ra
@@ -299,6 +318,9 @@ class LandlordContract(TimestampMixin, Base):
     startDate = Column("start_date", Date, nullable=True)
     endDate = Column("end_date", Date, nullable=True)
     payDay = Column("pay_day", Integer, default=5)
+    payMonths = Column("pay_months", Integer, default=1)      # Số tháng thanh toán 1 lần (SPEC-WEB-2 A)
+    payFromDay = Column("pay_from_day", Integer, default=1)   # Thời gian thanh toán từ ngày
+    payToDay = Column("pay_to_day", Integer, default=3)       # đến ngày
     status = Column(String, default="active")  # active | liquidated (SPEC-WEB)
 
 

@@ -52,9 +52,22 @@ NEW_COLUMNS = {
         "name": "VARCHAR DEFAULT ''",
         "business_type": "VARCHAR DEFAULT ''",
         "description": "TEXT DEFAULT ''",
+        "rental_mode": "VARCHAR DEFAULT 'Bao phòng'",  # SPEC-WEB-2 A
     },
     "rooms": {
         "kitchen": "VARCHAR DEFAULT 'Không có'",
+        "sub_rooms": "INTEGER DEFAULT 0",  # SPEC-WEB-2 B
+    },
+    "customers": {  # SPEC-WEB-2 C — hồ sơ khách đầy đủ
+        "job": "VARCHAR DEFAULT ''",
+        "marital_status": "VARCHAR DEFAULT ''",
+        "permanent_address": "VARCHAR DEFAULT ''",
+        "current_address": "VARCHAR DEFAULT ''",
+        "note": "TEXT DEFAULT ''",
+    },
+    "assets": {  # SPEC-WEB-2 A — tài sản chủ nhà + ghi chú
+        "owner_type": "VARCHAR DEFAULT 'room'",
+        "note": "TEXT DEFAULT ''",
     },
     "landlords": {
         "dob": "DATE",
@@ -85,6 +98,12 @@ NEW_COLUMNS = {
         "move_out_date": "DATE",
         "contract_date": "DATE",
         "expiry_date": "DATE",
+        # SPEC-WEB-2 D
+        "customer_id": "VARCHAR",
+        "pay_months": "INTEGER DEFAULT 1",
+        "pay_day_from": "INTEGER DEFAULT 1",
+        "pay_day_to": "INTEGER DEFAULT 3",
+        "service_config": "JSON DEFAULT '{}'",
     },
     "contracts": {
         "code": "VARCHAR DEFAULT ''",
@@ -93,6 +112,9 @@ NEW_COLUMNS = {
         "code": "VARCHAR DEFAULT ''",
         "discount": "INTEGER DEFAULT 0",
         "paid_amount": "INTEGER DEFAULT 0",
+        # SPEC-WEB-2 F — trạng thái gửi hóa đơn
+        "sent": "BOOLEAN DEFAULT FALSE",
+        "sent_date": "DATE",
     },
     "expenses": {
         "code": "VARCHAR DEFAULT ''",
@@ -107,6 +129,10 @@ NEW_COLUMNS = {
         "code": "VARCHAR DEFAULT ''",
         "deposit": "INTEGER DEFAULT 0",
         "status": "VARCHAR DEFAULT 'active'",
+        # SPEC-WEB-2 A — kỳ thanh toán trong form nhà (tab Hợp Đồng)
+        "pay_months": "INTEGER DEFAULT 1",
+        "pay_from_day": "INTEGER DEFAULT 1",
+        "pay_to_day": "INTEGER DEFAULT 3",
     },
 }
 

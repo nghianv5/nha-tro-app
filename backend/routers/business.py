@@ -218,24 +218,33 @@ def create_invoice(payload: schemas.InvoiceCreate, db: Session = Depends(get_db)
 
 @inv_router.post("/monthly", response_model=schemas.InvoiceOut, status_code=201)
 def create_monthly_invoice(payload: schemas.MonthlyInvoiceRequest, db: Session = Depends(get_db)):
+    return _create_monthly_invoice(db, payload.roomId, payload.month,
+                                   people=payload.people,
+                                   dien=(payload.dienPrev, payload.dienCurr),
+                                   nuoc=(payload.nuocPrev, payload.nuocCurr))
+
+
+def _create_monthly_invoice(db, room_id, month, people=None, dien=(None, None), nuoc=(None, None)):
+    """Logic tạo hóa đơn tháng dùng chung cho endpoint đơn + batch.
+    Ném HTTPException 404 (chưa có HĐ active) / 409 (đã có hóa đơn tháng)."""
     contract = (db.query(models.Contract)
-                .filter(models.Contract.roomId == payload.roomId,
+                .filter(models.Contract.roomId == room_id,
                         models.Contract.status == "active").first())
     if not contract:
         raise HTTPException(404, "Phòng chưa có hợp đồng đang hiệu lực")
     existed = (db.query(models.Invoice)
-               .filter(models.Invoice.roomId == payload.roomId,
+               .filter(models.Invoice.roomId == room_id,
                        models.Invoice.kind == "monthly",
-                       models.Invoice.month == payload.month).first())
+                       models.Invoice.month == month).first())
     if existed:
-        raise HTTPException(409, "Phòng đã có hóa đơn tháng này")
+        raise HTTPException(409, "Đã có hóa đơn tháng")
 
     def reading_pair(rtype, prev_override, curr_override):
         rows = (db.query(models.MeterReading)
-                .filter(models.MeterReading.roomId == payload.roomId,
+                .filter(models.MeterReading.roomId == room_id,
                         models.MeterReading.type == rtype)
                 .order_by(models.MeterReading.date, models.MeterReading.created_at).all())
-        in_month = [r for r in rows if r.date and r.date.strftime("%Y-%m") == payload.month]
+        in_month = [r for r in rows if r.date and r.date.strftime("%Y-%m") == month]
         prev = curr = None
         if in_month:
             curr = in_month[-1].current
@@ -253,13 +262,13 @@ def create_monthly_invoice(payload: schemas.MonthlyInvoiceRequest, db: Session =
         return (prev, curr)
 
     readings = {
-        "dien": reading_pair("dien", payload.dienPrev, payload.dienCurr),
-        "nuoc": reading_pair("nuoc", payload.nuocPrev, payload.nuocCurr),
+        "dien": reading_pair("dien", dien[0], dien[1]),
+        "nuoc": reading_pair("nuoc", nuoc[0], nuoc[1]),
     }
-    lines = calc.build_monthly_lines(contract, readings, people=payload.people)
+    lines = calc.build_monthly_lines(contract, readings, people=people)
     inv = models.Invoice(
         kind="monthly", houseId=contract.houseId, roomId=contract.roomId,
-        month=payload.month, roomFee=contract.price or 0,
+        month=month, roomFee=contract.price or 0,
         total=(contract.price or 0) + calc.lines_total(lines),
         status="unpaid", createdDate=_today(),
         code=gen_invoice_code(db, contract.roomId),
@@ -270,6 +279,71 @@ def create_monthly_invoice(payload: schemas.MonthlyInvoiceRequest, db: Session =
     db.commit()
     db.refresh(inv)
     return inv
+
+
+# ================================================================
+# Tạo hóa đơn tháng HÀNG LOẠT + đánh dấu ĐÃ GỬI (SPEC-WEB-2 F)
+# ================================================================
+@inv_router.post("/monthly-batch")
+def create_monthly_batch(payload: schemas.MonthlyBatchRequest, db: Session = Depends(get_db)):
+    """Tạo hóa đơn tháng cho MỌI phòng có HĐ active. Trả kết quả TỪNG phòng:
+    {roomId, ok, invoiceId} hoặc {roomId, ok: false, error} — lỗi cụ thể như
+    "Đã có hóa đơn tháng", "Chưa chốt số điện tháng này"."""
+    month = payload.month
+    room_ids = []
+    for c in (db.query(models.Contract)
+              .filter(models.Contract.status == "active")
+              .order_by(models.Contract.created_at, models.Contract.id).all()):
+        if c.roomId not in room_ids:
+            room_ids.append(c.roomId)
+    results = []
+    for room_id in room_ids:
+        existed = (db.query(models.Invoice)
+                   .filter(models.Invoice.roomId == room_id,
+                           models.Invoice.kind == "monthly",
+                           models.Invoice.month == month).first())
+        if existed:
+            results.append({"roomId": room_id, "ok": False, "error": "Đã có hóa đơn tháng"})
+            continue
+        contract = _active_contract_for_room(db, room_id)
+        # Điện tính theo số mà tháng này chưa chốt số điện -> báo lỗi riêng
+        dien_cfg = ((contract.services or {}).get("dien") or {}) if contract else {}
+        if contract and dien_cfg.get("price") and dien_cfg.get("unit", "so") == "so":
+            has_reading = any(
+                r.date and r.date.strftime("%Y-%m") == month
+                for r in db.query(models.MeterReading)
+                .filter(models.MeterReading.roomId == room_id,
+                        models.MeterReading.type == "dien").all())
+            if not has_reading:
+                results.append({"roomId": room_id, "ok": False,
+                                "error": "Chưa chốt số điện tháng này"})
+                continue
+        try:
+            inv = _create_monthly_invoice(db, room_id, month)
+            results.append({"roomId": room_id, "ok": True, "invoiceId": inv.id})
+        except HTTPException as exc:
+            db.rollback()
+            results.append({"roomId": room_id, "ok": False, "error": str(exc.detail)})
+        except Exception as exc:  # phòng lỗi không kéo sập cả batch
+            db.rollback()
+            results.append({"roomId": room_id, "ok": False, "error": str(exc)})
+    created = sum(1 for r in results if r["ok"])
+    return {"month": month, "results": results,
+            "created": created, "failed": len(results) - created}
+
+
+@inv_router.post("/mark-sent")
+def mark_sent(payload: schemas.MarkSentRequest, db: Session = Depends(get_db)):
+    """Đánh dấu ĐÃ GỬI cho danh sách hóa đơn (SPEC-WEB-2 F)."""
+    updated = []
+    for iid in (payload.invoiceIds or []):
+        inv = db.get(models.Invoice, iid)
+        if inv and not inv.sent:
+            inv.sent = True
+            inv.sentDate = _today()
+            updated.append(inv.id)
+    db.commit()
+    return {"ok": True, "updated": updated, "count": len(updated)}
 
 
 @inv_router.put("/{invoice_id}", response_model=schemas.InvoiceOut)
@@ -370,6 +444,7 @@ def list_all_payments(db: Session = Depends(get_db)):
 @router.get("/notifications")
 def notifications(db: Session = Depends(get_db)):
     today = _today()
+    now_iso = datetime.now().isoformat(timespec="seconds")
     houses = {h.id: h for h in db.query(models.House).all()}
     rooms = {r.id: r for r in db.query(models.Room).all()}
 
@@ -381,34 +456,41 @@ def notifications(db: Session = Depends(get_db)):
         r = rooms.get(rid)
         return r.name if r else ""
 
+    def created_iso(obj, fallback_date=None):
+        """Thời gian hiển thị = createdAt (có GIỜ) của bản ghi (SPEC-WEB-2 J)."""
+        if getattr(obj, "created_at", None):
+            return obj.created_at.isoformat(timespec="seconds")
+        if fallback_date:
+            return datetime.combine(fallback_date, datetime.min.time()).isoformat(timespec="seconds")
+        return now_iso
+
     items = []
     # Sự cố chưa sửa xong
     for inc in db.query(models.Incident).filter(models.Incident.status != "Đã sửa").all():
-        when = inc.date or (inc.created_at.date() if inc.created_at else today)
         content = "%s, %s %s" % (inc.note or inc.type, room_label(inc.roomId),
                                  house_label(inc.houseId))
         items.append({"id": "incident-" + inc.id, "type": "incident",
-                      "time": when.isoformat(), "content": content.strip(),
+                      "time": created_iso(inc, inc.date), "content": content.strip(),
                       "refId": inc.id})
-    # Hợp đồng sắp hết hạn (<= 30 ngày, tính cả vừa hết hạn 30 ngày)
+    # Hợp đồng sắp hết hạn (<= 30 ngày, tính cả vừa hết hạn 30 ngày) — giờ = hiện tại
     for c in db.query(models.Contract).filter(models.Contract.status == "active").all():
         if c.endDate and today - timedelta(days=30) <= c.endDate <= today + timedelta(days=30):
             content = "%s %s hết hợp đồng vào %s" % (
                 room_label(c.roomId), house_label(c.houseId),
                 c.endDate.strftime("%d/%m/%Y"))
             items.append({"id": "contract-" + c.id, "type": "contract",
-                          "time": c.endDate.isoformat(), "content": content,
+                          "time": now_iso, "content": content,
                           "refId": c.id})
     # Hóa đơn chưa thanh toán hết (quá hạn / chưa thanh toán)
     for inv in db.query(models.Invoice).all():
         if invoice_status(inv) == "paid":
             continue
-        when = inv.createdDate or today
         content = "Hóa đơn %s — %s %s chưa thanh toán, còn lại %sđ" % (
             inv.code or (inv.month or ""), room_label(inv.roomId),
             house_label(inv.houseId), "{:,}".format(invoice_remaining(inv)).replace(",", "."))
         items.append({"id": "invoice-" + inv.id, "type": "invoice",
-                      "time": when.isoformat(), "content": content, "refId": inv.id})
+                      "time": created_iso(inv, inv.createdDate), "content": content,
+                      "refId": inv.id})
     # Cọc sắp hết hạn
     for dep in db.query(models.Deposit).all():
         if dep.expiryDate and today - timedelta(days=30) <= dep.expiryDate <= today + timedelta(days=30):
@@ -416,7 +498,7 @@ def notifications(db: Session = Depends(get_db)):
                 room_label(dep.roomId), house_label(dep.houseId),
                 dep.expiryDate.strftime("%d/%m/%Y"))
             items.append({"id": "deposit-" + dep.id, "type": "deposit",
-                          "time": dep.expiryDate.isoformat(), "content": content,
+                          "time": created_iso(dep, dep.expiryDate), "content": content,
                           "refId": dep.id})
     items.sort(key=lambda x: x["time"], reverse=True)
     return {"items": items, "total": len(items)}

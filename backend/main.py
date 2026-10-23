@@ -108,6 +108,21 @@ def _enrich_landlord_contract(db, data):
         part = re.sub(r"\D", "", (house.address if house else "") or "")[:10]
         when = data.get("startDate") or datetime.now().date()
         data["code"] = "HD" + part + when.strftime("%Y%m%d")
+    # payDay (dùng tính "Ngày TT tiếp theo") đồng bộ từ payFromDay mới (SPEC-WEB-2 A)
+    if data.get("payFromDay"):
+        data["payDay"] = data["payFromDay"]
+
+
+def _enrich_asset(db, data):
+    # Mã tài sản tự sinh dạng 8 số: 00000001, 00000002... (SPEC-WEB-2 A)
+    if not data.get("code"):
+        mx = 0
+        for a in db.query(models.Asset).all():
+            try:
+                mx = max(mx, int(a.code))
+            except (TypeError, ValueError):
+                continue
+        data["code"] = "%08d" % (mx + 1)
 
 
 # ----- Router xác thực (login công khai, còn lại tự bảo vệ trong router) -----
@@ -119,7 +134,7 @@ app.include_router(make_crud_router(models.Room, schemas.RoomOut, schemas.RoomCr
 app.include_router(make_crud_router(models.Customer, schemas.CustomerOut, schemas.CustomerCreate, schemas.CustomerUpdate, API + "/customers", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.MeterReading, schemas.MeterReadingOut, schemas.MeterReadingCreate, schemas.MeterReadingUpdate, API + "/meter-readings", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Vehicle, schemas.VehicleOut, schemas.VehicleCreate, schemas.VehicleUpdate, API + "/vehicles", dependencies=_LOGIN_REQUIRED), prefix="")
-app.include_router(make_crud_router(models.Asset, schemas.AssetOut, schemas.AssetCreate, schemas.AssetUpdate, API + "/assets", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.Asset, schemas.AssetOut, schemas.AssetCreate, schemas.AssetUpdate, API + "/assets", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_asset), prefix="")
 app.include_router(make_crud_router(models.Service, schemas.ServiceOut, schemas.ServiceCreate, schemas.ServiceUpdate, API + "/services", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Unit, schemas.UnitOut, schemas.UnitCreate, schemas.UnitUpdate, API + "/units", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Expense, schemas.ExpenseOut, schemas.ExpenseCreate, schemas.ExpenseUpdate, API + "/expenses", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_expense), prefix="")

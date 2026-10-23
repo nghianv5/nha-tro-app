@@ -95,7 +95,11 @@ hệ thống đăng nhập: login đúng/sai mật khẩu, API chưa đăng nh�
 staff quản lý tài khoản bị 403, admin đặt lại mật khẩu; và các tính năng bản web:
 verify-password, thanh toán hóa đơn từng phần → partial → paid + phiếu thu tự sinh,
 phiếu thu/chi, chức vụ & phân công, điện nước nhà + phiếu chi tự sinh, thông báo tổng hợp,
-`ensure_columns` trên DB cũ mô phỏng (tổng **31 test**).
+`ensure_columns` trên DB cũ mô phỏng; và các bổ sung đợt 2 (SPEC-WEB-2):
+monthly-batch + báo lỗi từng phòng, mark-sent, cọc kèm customer + serviceConfig,
+nhà + tài khoản điện/nước, cấu hình dịch vụ của HĐ quyết định hóa đơn tháng,
+hồ sơ khách đầy đủ, rentalMode/subRooms, mã tài sản tự sinh, thông báo có giờ
+(tổng **43 test**).
 
 ## Cấu trúc thư mục
 
@@ -127,7 +131,8 @@ nha-tro-app/
 │   ├── conftest.py      # Fixture TestClient + SQLite tạm + đăng nhập lấy token admin/staff
 │   ├── test_api.py      # 12 test luồng nghiệp vụ
 │   ├── test_auth.py     # 9 test đăng nhập & phân quyền API
-│   └── test_web.py      # 10 test tính năng bản web (SPEC-WEB)
+│   ├── test_web.py      # 10 test tính năng bản web (SPEC-WEB)
+│   └── test_web2.py     # 12 test bổ sung đợt 2 (SPEC-WEB-2)
 ├── docker-compose.yml   # db (postgres:16) + web
 ├── Dockerfile
 ├── SPEC.md              # Đặc tả bản mobile (cũ)
@@ -148,7 +153,8 @@ nha-tro-app/
 | CRUD mỗi module | `GET/POST /api/{houses,rooms,customers,contracts,meter-readings,vehicles,assets,services,units,expenses,incidents,deposits,landlords,landlord-contracts,house-payments,accounts,receipts,positions,staff-assignments,house-utilities}` + `GET/PUT/DELETE /api/.../{id}` — hỗ trợ filter `?houseId=&roomId=&status=&kind=&type=&month=&accountId=&positionId=` |
 | Hóa đơn | `GET/POST /api/invoices`, `GET/PUT/DELETE /api/invoices/{id}` (PUT thay cả dòng hóa đơn) |
 | Thanh toán hóa đơn | `GET/POST /api/invoices/{id}/payments` `{date, amount, receiver, note}` — cập nhật `paidAmount`, trạng thái suy ra, **tự tạo phiếu thu** • `GET /api/invoice-payments` (lịch sử mọi hóa đơn) |
-| Tạo hóa đơn tháng | `POST /api/invoices/monthly` `{roomId, month, people?, dienPrev/Curr?, nuocPrev/Curr?}` — tự tính từ hợp đồng + chỉ số chốt gần nhất; trùng tháng → 409 |
+| Tạo hóa đơn tháng | `POST /api/invoices/monthly` `{roomId, month, people?, dienPrev/Curr?, nuocPrev/Curr?}` — tự tính từ hợp đồng + chỉ số chốt gần nhất; trùng tháng → 409 • `POST /api/invoices/monthly-batch` `{month}` (đợt 2) — tạo cho mọi phòng có HĐ hiệu lực, trả `{results: [{roomId, ok, invoiceId|error}]}` (lỗi: "Đã có hóa đơn tháng" / "Chưa chốt số điện tháng này") |
+| Gửi hóa đơn (đợt 2) | `POST /api/invoices/mark-sent` `{invoiceIds}` → đặt `sent=true`, `sentDate` = hôm nay → `{count}` |
 | Thanh lý hợp đồng | `POST /api/contracts/{id}/liquidate` `{liquidateDate, dienFinal, nuocFinal, refundRoomFee, prepaidRoomFee, confirm}` — `confirm:false` chỉ tính thử; `confirm:true` chốt: đóng HĐ, ghi chỉ số cuối, tạo hóa đơn thu thêm (nếu khách nợ) hoặc phiếu chi hoàn trả |
 | Chốt điện nước chủ nhà | `GET/POST /api/landlord-meter-readings`, `PUT/DELETE .../{id}` — tổng tự tính |
 | Thanh toán điện nước nhà | CRUD `/api/house-utilities` + `POST /api/house-utilities/{id}/pay` — đổi trạng thái → paid và **tự tạo phiếu chi** |
@@ -177,6 +183,56 @@ nha-tro-app/
   cổng thanh toán của từng nhà theo tháng; có lịch sử theo mã và nút thanh toán.
 - **Thông báo**: tổng hợp tự động từ sự cố/HĐ/hóa đơn/cọc; bật/tắt theo loại ở ngay
   màn Thông báo (lưu trên trình duyệt).
+
+## Bổ sung đợt 2 (SPEC-WEB-2 — bám sát thiết kế web)
+
+- **Nhà — form 4 tab**: Thông tin nhà | Chủ nhà | Hợp Đồng | Tài sản chủ nhà.
+  Thêm **Hình thức cho thuê** (`houses.rentalMode`: Bao phòng | Bao người);
+  nhãn mục "Loại nhà trọ" đổi thành **"Loại hình kinh doanh"** (gộp tùy chọn:
+  Chung cư mini, Nhà nguyên căn, Homestay, Phòng đơn, Phòng trọ). Tab Hợp Đồng
+  có "Số tháng thanh toán 1 lần" + "Thời gian thanh toán từ–đến ngày" và mục
+  **Mã Hóa Đơn dịch vụ**: lưu nhà kèm mã điện/mã nước sẽ tự tạo 2 bản ghi
+  `house_utilities` của tháng hiện tại (chưa thanh toán, số tiền 0). Tab Tài sản
+  chủ nhà cho thêm dòng tài sản (`assets.ownerType = 'landlord'`, mã tự sinh
+  8 số, có ghi chú). DS Nhà thêm cột **Số phòng / Số phòng trống**.
+- **Phòng**: thêm **Số phòng con** (`rooms.subRooms`); 14 ô tiện ích đúng thiết
+  kế (Cửa sổ, Ban công, Sân phơi, Thang máy, Điều hòa, Nóng lạnh, Máy giặt,
+  Gác xép, Có chỗ để xe máy/ô tô/sạc xe điện, Bảo vệ, Camera, Internet) + bộ lọc
+  **Tivi** khớp theo tài sản Tivi trong phòng; trình sửa dịch vụ phòng có
+  **đơn giá + đơn vị** từng dịch vụ và thêm/bớt dòng dịch vụ khác.
+- **Khách thuê — hồ sơ đầy đủ**: thêm Nghề nghiệp, Tình trạng hôn nhân, Địa chỉ
+  thường trú, Địa chỉ hiện tại, Ghi chú (`customers.job/maritalStatus/...`) —
+  dùng chung ở Quản lý → Khách thuê và các form chọn/tạo khách (cọc, hợp đồng).
+- **Cọc giữ phòng — form 2 tab**: Thông tin phòng | Thông tin cọc giữ phòng.
+  Khách liên kết bằng `deposits.customerId` (chọn có sẵn hoặc tạo mới đủ hồ sơ);
+  thông tin phòng tự điền từ phòng đã chọn và sửa được; **cấu hình dịch vụ**
+  (`deposits.serviceConfig`: giá điện/nước + đơn vị, số lượng + phí xe máy/ô
+  tô/xe đạp) kèm "Số tháng thanh toán 1 lần" + "Thời gian thanh toán từ–đến".
+- **Hợp đồng**: form chọn khách có sẵn hoặc tạo mới đủ hồ sơ, **có nút Sửa**
+  (cả ở DS lẫn trang chi tiết); DS đúng lưới thiết kế (Giá phòng, Giá thuê,
+  Trạng thái phòng, **Thời gian trống phòng** = ngày từ cọc gần nhất của phòng).
+  Cấu hình dịch vụ lưu trên HĐ là nguồn tính hóa đơn tháng.
+- **Hóa đơn — quy trình Tạo/Gửi**: cột mới `invoices.sent` + `sentDate`.
+  Màn **Tạo hóa đơn hàng tháng**: chọn tháng + lọc Nhà/Trạng thái (Chưa tạo /
+  Chưa gửi / Đã gửi), bảng mọi phòng có HĐ hiệu lực, chọn từng phòng tạo lẻ
+  hoặc **Tạo toàn bộ hóa đơn** qua `POST /api/invoices/monthly-batch` — trả kết
+  quả **từng phòng** kèm lỗi cụ thể ("Đã có hóa đơn tháng", "Chưa chốt số điện
+  tháng này"); nút chuyển trạng thái "Đang tạo hóa đơn..." khi chạy và "Tạo lại
+  toàn bộ hóa đơn" (có hộp xác nhận) sau khi xong. **Gửi Hóa đơn** qua
+  `POST /api/invoices/mark-sent` (đánh dấu đã gửi + ngày gửi). Màn **Hóa đơn
+  đặc biệt**: lọc theo Lý do thu / Ngày tạo / trạng thái gửi; form tạo có lọc
+  Nhà/Phòng + bảng chọn phòng và nút **"Tạo hóa đơn đặc biệt cho tất cả"**.
+- **Tài chính**: mỗi dòng phiếu thu/chi có link **Chi tiết** mở hộp thoại đầy
+  đủ mọi trường + ghi chú.
+- **Điện nước nhà**: lọc thêm theo **khoảng tháng (Từ–Đến)**; số tiền 0 hiển
+  thị dạng `----------------`; nút "+ Thêm hóa đơn tháng mới"; sửa được số
+  tiền của hóa đơn chưa thanh toán (form sửa sẵn có).
+- **Nhân Viên**: nút "Thêm Chức vụ" mở form riêng chỉ gồm ô **Chức vụ** + nút
+  **Thêm Chức vụ** (đúng mockup).
+- **Thông báo**: thời gian hiển thị kèm **giờ** (`2026/10/23 10:41`) — API trả
+  datetime đầy đủ từ `created_at` của bản ghi gốc.
+- Cột mới đều đi qua `ensure_columns` (không cần xóa DB); hóa đơn mẫu
+  3.190.000đ nay có `sent = true` để dữ liệu mẫu có cả 2 trạng thái gửi.
 
 ## Ghi chú
 
