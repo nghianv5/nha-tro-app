@@ -79,16 +79,16 @@ function val(id){ var e=document.getElementById(id); return e? e.value.trim() : 
 function byId(arr,id){ for(var i=0;i<arr.length;i++) if(arr[i].id===id) return arr[i]; return null; }
 function fld(label, inputHtml, required){ return '<div><label class="fl">'+esc(label)+(required?' <b>*</b>':'')+'</label>'+inputHtml+'</div>'; }
 function inp(id, value, type, extra){ return '<input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'" '+(extra||'')+'>'; }
-function sel(id, options, current){
-  var h='<select id="'+id+'">';
+function sel(id, options, current, extra){
+  var h='<select id="'+id+'"'+(extra ? ' '+extra : '')+'>';
   options.forEach(function(o){ var v=Array.isArray(o)?o[0]:o, t=Array.isArray(o)?o[1]:o;
     h+='<option value="'+esc(v)+'"'+(String(v)===String(current)?' selected':'')+'>'+esc(t)+'</option>'; });
   return h+'</select>';
 }
-function selObj(id, arr, current, labelFn, allLabel){
+function selObj(id, arr, current, labelFn, allLabel, extra){
   var opts = allLabel!==undefined ? [['', allLabel]] : [];
   arr.forEach(function(o){ opts.push([o.id, labelFn(o)]); });
-  return sel(id, opts, current);
+  return sel(id, opts, current, extra);
 }
 function chk(id, label, on){ return '<label class="chk"><input type="checkbox" id="'+id+'"'+(on?' checked':'')+'> '+esc(label)+'</label>'; }
 function isChk(id){ var e=document.getElementById(id); return !!(e && e.checked); }
@@ -2910,9 +2910,10 @@ function staffRolesHtml(){
   /* Nút Thêm chức vụ đặt DƯỚI bảng (đúng ảnh) */
   h += '<div class="btnrow"><button class="btn green" onclick="openAddPosition()">+ Thêm chức vụ</button></div>';
   var cur = byId(db.positions, staffState.rolePos) || db.positions[0];
+  /* Đợt 13: chọn chức vụ là ma trận quyền tự đổi theo (onchange), không còn
+     nút "Xem ma trận quyền" — ma trận vẫn tự hiện ngay khi mở tab. */
   h += '<div class="filters"><div class="fg"><label>Chọn chức vụ để sửa ma trận quyền</label>' +
-    selObj('role_pos', db.positions, cur ? cur.id : '', function(x){ return x.name; }) + '</div>' +
-    '<button class="btn" onclick="renderRoleMatrix()">Xem ma trận quyền</button></div><div id="role_matrix"></div>';
+    selObj('role_pos', db.positions, cur ? cur.id : '', function(x){ return x.name; }, undefined, 'onchange="renderRoleMatrix()"') + '</div></div><div id="role_matrix"></div>';
   setTimeout(renderRoleMatrix, 0);
   return h;
 }
