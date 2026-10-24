@@ -35,7 +35,10 @@ function api(path, method, body){
     return res.text().then(function(txt){
       var data = null; try{ data = txt ? JSON.parse(txt) : null; }catch(e){}
       if(!res.ok){
-        if(res.status === 401 && getToken() && path !== '/auth/login'){ setToken(null); currentUser = null; showLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
+        /* Đợt 11: verify-password trả 401 khi nhập SAI mật khẩu — đó là lỗi nhập
+           liệu, không phải hết phiên: không được đăng xuất người dùng (trước đây
+           nhập sai mật khẩu ở modal Xóa là bị văng ra màn hình đăng nhập). */
+        if(res.status === 401 && getToken() && path !== '/auth/login' && path !== '/auth/verify-password'){ setToken(null); currentUser = null; showLogin('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); }
         var msg = (data && data.detail) || ('Lỗi ' + res.status); throw new Error(msg);
       }
       return data;
@@ -467,9 +470,10 @@ function tableHtml(cols, rowsHtml, emptyMsg){
 /* ---------- Modal + Xóa phải xác thực mật khẩu ---------- */
 function openModal(html){ document.getElementById('modalRoot').innerHTML = '<div class="modal" onclick="if(event.target===this)closeModal()"><div class="box">'+html+'</div></div>'; }
 function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; }
-function askDelete(label, onOk){
+function askDelete(label, onOk, warn){
   openModal('<h3>Xác thực mật khẩu để xóa</h3>' +
     '<p style="color:#616161;font-size:14px">Bạn sắp xóa: <b>'+esc(label)+'</b>.<br>Nhập mật khẩu của bạn để xác nhận (theo thiết kế, thao tác Xóa cần xác thực mật khẩu).</p>' +
+    (warn ? '<p style="color:#c62828;font-size:14px">'+esc(warn)+'</p>' : '') +
     '<label class="fl">Mật khẩu</label><input id="del_pw" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu của bạn">' +
     '<div class="btnrow"><button class="btn gray" onclick="closeModal()">Hủy</button>' +
     '<button class="btn red" id="del_ok">Xóa</button></div>');
@@ -482,10 +486,10 @@ function askDelete(label, onOk){
     }).catch(function(e){ document.getElementById('del_ok').disabled = false; errToast(e); });
   };
 }
-function delBtn(label, coll, id, after){
+function delBtn(label, coll, id, after, warn){
   askDelete(label, function(){
     deleteRecDirect(coll, id).then(function(){ toast('Đã xóa'); (after || function(){ go(curView, curParams); })(); }).catch(errToast);
-  });
+  }, warn);
 }
 
 /* ================================================================
@@ -653,13 +657,20 @@ function renderHouseRows(){
       '<td class="price">'+(lc ? fmtNum(lc.rentPrice) : '')+'</td><td class="price">'+(lc ? fmtNum(lcTotal) : '—')+'</td><td>'+(npd ? fmtDate(npd) : '—')+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'houseDetail\',{id:\''+hs.id+'\'})">Chi tiết</button></td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa</button></td>' +
-      '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Nhà '+esc(hs.name || hs.address)+'\',\'houses\',\''+hs.id+'\')">Xóa</button></td></tr>';
+      /* Đợt 11: xóa nhà xóa kèm toàn bộ dữ liệu liên quan (backend cascade) nên
+         modal cảnh báo trước, và sau khi xóa thì nạp lại toàn bộ dữ liệu để
+         không còn bản ghi mồ côi trong cache (phòng, HĐ, hóa đơn của nhà đã xóa) */
+      '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Nhà '+esc(hs.name || hs.address)+'\',\'houses\',\''+hs.id+'\',function(){ loadAll().then(function(){ go(\'houses\'); }).catch(errToast); },\'Xóa nhà sẽ xóa kèm toàn bộ dữ liệu liên quan của nhà này (phòng, hợp đồng, hóa đơn, cọc, tài sản, mã điện/nước...). Hành động này không thể hoàn tác.\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có nhà nào');
 }
 /* ----- Màn hình CHI TIẾT NHÀ (Đợt 9): bấm tên nhà hoặc nút "Chi tiết" ở
    Danh sách nhà -> xem TOÀN BỘ thông tin của nhà, trình bày theo đúng các
    phần của form Thêm nhà (+ phòng thuộc nhà). Dữ liệu lấy từ cache db đã
    nạp sẵn, không gọi thêm API. Trường trống hiện "—". ----- */
+/* Đợt 11: màn hình chi tiết nhà viết lại theo đúng giao diện form Thêm nhà —
+   cùng wrapper .form-card, cùng thứ tự 5 phần, cùng tiêu đề .form-sec/.sec và
+   lưới trường .fgrid/.fld; chỉ khác là giá trị hiển thị dạng text chỉ đọc thay
+   cho input. Phần Phòng thuộc nhà thêm thành phần thứ 6 sau Tài sản. */
 function viewHouseDetail(p){
   var hs = p.id ? byId(db.houses, p.id) : null;
   if(!hs){ toast('Không tìm thấy nhà'); go('houses'); return; }
@@ -680,94 +691,127 @@ function viewHouseDetail(p){
   var rooms = db.rooms.filter(function(r){ return r.houseId === hs.id; });
   var cnt = { empty:0, deposited:0, rented:0 };
   rooms.forEach(function(r){ cnt[roomStatus(r)]++; });
+  /* Giá trị chỉ đọc trong lưới trường của form: cùng label .fl của fld(),
+     phần giá trị là text (không phải input); trống thì hiện "—" */
   var dv = function(v){ return (v === null || v === undefined || String(v).trim() === '') ? '—' : esc(v); };
-  var row = function(label, valHtml){ return '<div class="kv"><span>'+esc(label)+'</span><span>'+valHtml+'</span></div>'; };
-  var sec = function(title, inner){ return '<div class="card" style="margin-top:14px"><h3 class="sec" style="margin-top:0">'+esc(title)+'</h3>'+inner+'</div>'; };
+  var ro = function(v){ return '<div style="padding:9px 2px">' + dv(v) + '</div>'; };
+  var roHtml = function(html){ return '<div style="padding:9px 2px">' + html + '</div>'; };
+  var btns = '<div class="btnrow"><button class="btn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa nhà</button>' +
+    '<button class="btn gray" onclick="go(\'houses\')">Quay lại</button></div>';
+  var h = pageTitle('Chi tiết nhà — ' + (hs.name || hs.address)) + btns + '<div class="form-card">';
+  /* --- Phần 1: Thông Tin Nhà (đúng thứ tự form: địa chỉ → bản đồ → sổ đỏ → tên/diện tích → mô tả) --- */
+  var hasCoords = (hs.latitude != null && hs.longitude != null);
+  h += '<div class="form-sec"><h3 class="sec">Thông Tin Nhà</h3><div class="fgrid">' +
+    fld('Địa chỉ', ro(hs.address)) +
+    fld('Tỉnh / TP', ro(hs.province)) +
+    fld('Quận / Huyện', ro(hs.district)) +
+    fld('Phường / Xã', ro(hs.ward)) +
+    '</div>' +
+    /* Khối vị trí bản đồ như form nhưng chỉ xem: khung map-real hiển thị tọa độ
+       + link Google Maps, không khởi tạo bản đồ tương tác */
+    '<label class="fl">Vị trí trên bản đồ</label>' +
+    '<div class="map-real" style="display:flex;align-items:center;justify-content:center;text-align:center">' +
+    (hasCoords
+      ? '<span>' + esc(hs.latitude + ', ' + hs.longitude) + ' — <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + hs.latitude + ',' + hs.longitude + '">Mở Google Maps ↗</a></span>'
+      : '<span>—</span>') +
+    '</div>' +
+    '<div class="fgrid">' +
+    fld('Vĩ độ (latitude)', ro(hasCoords ? hs.latitude : '')) +
+    fld('Kinh độ (longitude)', ro(hasCoords ? hs.longitude : '')) +
+    '</div>' +
+    fld('Ghi chú vị trí trên bản đồ', ro(mapNote)) +
+    '<div style="margin-top:6px"><label class="fl">Ảnh sổ đỏ</label>' +
+    ((hs.redBookImages && hs.redBookImages.length)
+      ? '<div class="rb-grid">' + hs.redBookImages.map(function(u){ return '<a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh sổ đỏ"></a>'; }).join('') + '</div>'
+      : '<div style="padding:9px 2px">—</div>') +
+    '</div>' +
+    '<div class="fgrid">' +
+    fld('Tên nhà', ro(hs.name)) +
+    fld('Diện tích sàn (m2)', ro(hs.floorArea)) +
+    fld('Số tầng', ro(hs.floors)) +
+    fld('Số phòng ngủ', ro(hs.bedrooms)) +
+    fld('Số nhà vệ sinh', ro(hs.bathrooms)) +
+    fld('Loại hình kinh doanh', ro(hs.businessType)) +
+    '</div>' + fld('Thêm mô tả', roHtml(desc ? esc(desc).replace(/\n/g, '<br>') : '—')) + '</div>';
+  /* --- Phần 2: Chủ Nhà --- */
   var cmndCell = function(label, url){
     return '<div style="flex:1;min-width:140px"><div style="font-size:12.5px;color:#616161;margin-bottom:4px">'+esc(label)+'</div>' +
       (url ? '<a href="'+esc(url)+'" target="_blank" rel="noopener"><img class="doc-thumb" src="'+esc(url)+'" alt="Ảnh CMND '+esc(label)+'"></a>' : '<div>—</div>') + '</div>';
   };
-  var huBlock = function(label, u){
-    return '<h4 style="margin:12px 0 4px;font-size:14px;color:#37474f">'+esc(label)+'</h4>' +
-      row('Mã hóa đơn', u ? dv(u.customerCode) : '—') +
-      row('Chủ tài khoản', u ? dv(u.accountHolder) : '—') +
-      row('Tài khoản', u ? dv(u.username) : '—') +
-      row('Mật khẩu', (u && u.password) ? '••••••' : '—');
-  };
-  var h = pageTitle('Chi tiết nhà — ' + (hs.name || hs.address));
-  h += '<div class="btnrow"><button class="btn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa nhà</button>' +
-    '<button class="btn gray" onclick="go(\'houses\')">Quay lại</button></div>';
-  /* --- Phần 1: Thông Tin Nhà --- */
-  h += '<div class="card"><h3 class="sec" style="margin-top:0">Thông Tin Nhà</h3>' +
-    row('Tên nhà', dv(hs.name)) +
-    row('Địa chỉ', dv(houseFullAddr(hs))) +
-    row('Diện tích sàn', hs.floorArea ? dv(hs.floorArea) + ' m2' : '—') +
-    row('Số tầng', dv(hs.floors)) +
-    row('Số phòng ngủ', dv(hs.bedrooms)) +
-    row('Số nhà vệ sinh', dv(hs.bathrooms)) +
-    row('Loại hình kinh doanh', dv(hs.businessType)) +
-    row('Mô tả', desc ? esc(desc).replace(/\n/g, '<br>') : '—') +
-    (mapNote ? row('Ghi chú vị trí trên bản đồ', esc(mapNote)) : '') +
-    row('Vị trí trên bản đồ', (hs.latitude != null && hs.longitude != null)
-      ? esc(hs.latitude + ', ' + hs.longitude) + ' — <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + hs.latitude + ',' + hs.longitude + '">Mở Google Maps ↗</a>' : '—') +
-    '<div style="margin-top:10px"><div style="font-size:13px;color:#757575;margin-bottom:6px">Ảnh sổ đỏ</div>' +
-    ((hs.redBookImages && hs.redBookImages.length)
-      ? '<div class="rb-grid">' + hs.redBookImages.map(function(u){ return '<a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh sổ đỏ"></a>'; }).join('') + '</div>'
-      : '<div>—</div>') +
-    '</div></div>';
-  /* --- Phần 2: Chủ Nhà --- */
-  var llHtml;
+  h += '<div class="form-sec"><h3 class="sec">Chủ Nhà</h3>';
   if(ll){
-    llHtml = row('Họ tên', dv(ll.name)) +
-      row('Ngày sinh', ll.dob ? fmtDate(ll.dob) : '—') +
-      row('Địa chỉ thường trú', dv(ll.permanentAddress || ll.address)) +
-      row('SDT', dv(ll.phone)) +
-      row('Giới tính', dv(ll.gender)) +
-      row('Nghề nghiệp', dv(ll.job)) +
-      row('Tình trạng hôn nhân', dv(ll.maritalStatus)) +
-      row('Mail', dv(ll.email)) +
-      row('CMND', dv(ll.idCard)) +
-      '<div style="margin-top:10px"><div style="font-size:13px;color:#757575;margin-bottom:6px">Ảnh CMND/CCCD</div>' +
-      '<div style="display:flex;gap:10px;flex-wrap:wrap">' + cmndCell('Mặt trước', ll.idCardImage1) + cmndCell('Mặt sau', ll.idCardImage2) + '</div></div>';
-  } else llHtml = '<div class="empty-note">Chưa có thông tin chủ nhà</div>';
-  h += sec('Chủ Nhà', llHtml);
+    h += '<div class="fgrid">' +
+      fld('Họ tên', ro(ll.name)) +
+      fld('Ngày sinh', ro(ll.dob ? fmtDate(ll.dob) : '')) +
+      fld('Địa chỉ thường trú', ro(ll.permanentAddress || ll.address)) +
+      fld('SDT', ro(ll.phone)) +
+      fld('Giới tính', ro(ll.gender)) +
+      fld('Nghề nghiệp', ro(ll.job)) +
+      fld('Tình trạng hôn nhân', ro(ll.maritalStatus)) +
+      fld('Mail', ro(ll.email)) +
+      fld('CMND', ro(ll.idCard)) +
+      '</div>' +
+      '<div><label class="fl">Ảnh CMND/CCCD</label><div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      cmndCell('Mặt trước', ll.idCardImage1) + cmndCell('Mặt sau', ll.idCardImage2) + '</div></div>';
+  } else h += '<div class="empty-note">Chưa có thông tin chủ nhà</div>';
+  h += '</div>';
   /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
-  var lcHtml;
+  h += '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3>';
   if(lc){
     var lcTotal = (Number(lc.rentPrice) || 0) * Math.max(1, parseInt(lc.payMonths, 10) || 1);
     var npd = nextPayDate(lc);
-    lcHtml = row('Mã hợp đồng', dv(lc.code)) +
-      row('Tiền thuê', fmt(lc.rentPrice)) +
-      row('Tiền cọc', fmt(lc.deposit)) +
-      row('Ngày bắt đầu', lc.startDate ? fmtDate(lc.startDate) : '—') +
-      row('Ngày kết thúc', lc.endDate ? fmtDate(lc.endDate) : '—') +
-      (lc.payDate ? row('Thời gian thanh toán', fmtDate(lc.payDate)) : '') +
-      row('Ngày thanh toán kỳ đầu', lc.firstPayDate ? fmtDate(lc.firstPayDate) : '—') +
-      row('Số tháng thanh toán 1 lần', dv(Math.max(1, parseInt(lc.payMonths, 10) || 1))) +
-      row('Ngày thanh toán tiếp theo', npd ? fmtDate(npd) : '—') +
-      row('Tổng số tiền thanh toán', fmt(lcTotal)) +
-      row('Trạng thái hợp đồng', lc.status === 'liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>' : '<span class="badge b-paid">Đang hiệu lực</span>');
-  } else lcHtml = '<div class="empty-note">Chưa có hợp đồng chủ nhà</div>';
-  h += sec('Hợp Đồng', lcHtml);
+    h += '<div class="fgrid">' +
+      fld('Mã hợp đồng', ro(lc.code)) +
+      fld('Tiền thuê (vnđ)', roHtml(fmt(lc.rentPrice))) +
+      fld('Cọc (vnđ)', roHtml(fmt(lc.deposit))) +
+      fld('Ngày bắt đầu', ro(lc.startDate ? fmtDate(lc.startDate) : '')) +
+      fld('Ngày kết thúc', ro(lc.endDate ? fmtDate(lc.endDate) : '')) +
+      fld('Số tháng thanh toán 1 lần', ro(Math.max(1, parseInt(lc.payMonths, 10) || 1))) +
+      /* Dòng "Thời gian thanh toán" cũ chỉ hiện khi HĐ có payDate (dữ liệu cũ) */
+      (lc.payDate ? fld('Thời gian thanh toán', ro(fmtDate(lc.payDate))) : '') +
+      fld('Ngày thanh toán kỳ đầu', ro(lc.firstPayDate ? fmtDate(lc.firstPayDate) : '')) +
+      /* Ngày thanh toán tiếp theo: chỉ hiển thị, suy ra bằng nextPayDate(), không lưu */
+      fld('Ngày thanh toán tiếp theo', ro(npd ? fmtDate(npd) : '')) +
+      fld('Tổng số tiền thanh toán (vnđ)', roHtml(fmt(lcTotal))) +
+      fld('Trạng thái hợp đồng', roHtml(lc.status === 'liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>' : '<span class="badge b-paid">Đang hiệu lực</span>')) +
+      '</div>';
+  } else h += '<div class="empty-note">Chưa có hợp đồng chủ nhà</div>';
+  h += '</div>';
   /* --- Phần 4: Mã Hóa Đơn dịch vụ --- */
-  h += sec('Mã Hóa Đơn dịch vụ', huBlock('Điện', huDien) + huBlock('Nước', huNuoc));
-  /* --- Phần 5: Tài sản của chủ nhà --- */
-  h += sec('Tài sản', tableHtml(['Loại','Trạng thái','Ghi chú','Ảnh'], llAssets.map(function(a){
-    return '<tr><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td><td>'+esc(a.note || '')+'</td>' +
-      '<td>'+(a.imageUrl ? '<a href="'+esc(a.imageUrl)+'" target="_blank" rel="noopener"><img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản"></a>' : '—')+'</td></tr>';
-  }).join(''), 'Chưa có tài sản'));
-  /* --- Phần 6: Phòng thuộc nhà --- */
-  var roomsHtml = row('Tổng số phòng', dv(rooms.length)) +
-    row('Phòng trống', dv(cnt.empty)) +
-    row('Phòng đã cọc', dv(cnt.deposited)) +
-    row('Phòng đã thuê', dv(cnt.rented)) +
+  var huFields = function(prefix, label, u){
+    return fld(label + ' — Mã hóa đơn', ro(u ? u.customerCode : '')) +
+      fld(label + ' — Chủ tài khoản', ro(u ? u.accountHolder : '')) +
+      fld(label + ' — Tài khoản', ro(u ? u.username : '')) +
+      fld(label + ' — Mật khẩu', roHtml((u && u.password) ? '••••••' : '—'));
+  };
+  h += '<div class="form-sec"><h3 class="sec">Mã Hóa Đơn dịch vụ</h3><div class="fgrid">' +
+    huFields('hu_dien', 'Điện', huDien) + huFields('hu_nuoc', 'Nước', huNuoc) + '</div></div>';
+  /* --- Phần 5: Tài sản (của chủ nhà) — mỗi tài sản một dòng fgrid như form --- */
+  h += '<div class="form-sec"><h3 class="sec">Tài sản</h3>';
+  if(llAssets.length){
+    h += llAssets.map(function(a){
+      return '<div class="fgrid">' +
+        fld('Mã tài sản', ro(a.code)) +
+        fld('Loại tài sản', ro(a.type)) +
+        fld('Trạng thái', ro(a.status)) +
+        fld('Ảnh tài sản', a.imageUrl ? '<a href="'+esc(a.imageUrl)+'" target="_blank" rel="noopener"><img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản"></a>' : ro('')) +
+        fld('Note', ro(a.note)) +
+        '</div>';
+    }).join('');
+  } else h += '<div class="empty-note">Chưa có tài sản</div>';
+  h += '</div>';
+  /* --- Phần 6: Phòng thuộc nhà (chỉ có ở chi tiết, đặt sau Tài sản) --- */
+  h += '<div class="form-sec"><h3 class="sec">Phòng thuộc nhà</h3><div class="fgrid">' +
+    fld('Tổng số phòng', ro(rooms.length)) +
+    fld('Phòng trống', ro(cnt.empty)) +
+    fld('Phòng đã cọc', ro(cnt.deposited)) +
+    fld('Phòng đã thuê', ro(cnt.rented)) +
+    '</div>' +
     tableHtml(['Phòng','Tầng','Giá','Trạng thái'], rooms.map(function(r){
       return '<tr><td><a onclick="go(\'roomDetail\',{id:\''+r.id+'\'})"><b>'+esc(r.name)+'</b></a></td><td>'+dv(r.floor)+'</td>' +
         '<td class="price">'+fmt(r.price)+'</td><td>'+statusBadge(roomStatus(r))+'</td></tr>';
-    }).join(''), 'Chưa có phòng nào');
-  h += sec('Phòng thuộc nhà', roomsHtml);
-  h += '<div class="btnrow"><button class="btn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa nhà</button>' +
-    '<button class="btn gray" onclick="go(\'houses\')">Quay lại</button></div>';
+    }).join(''), 'Chưa có phòng nào') + '</div>';
+  h += '</div>' + btns;
   setContent(h);
 }
 /* Đợt 5: Loại hình kinh doanh đúng 4 lựa chọn của ảnh thiết kế form nhà */

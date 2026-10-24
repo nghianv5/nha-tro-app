@@ -617,6 +617,100 @@ ngày nhập; gợi ý kỳ đầu sửa H4 = 01/11/2026 từ ngày bắt đầu
 chi tiết nhà ẩn dòng "Thời gian thanh toán" khi HĐ không có `payDate` và
 hiện khi có.
 
+## Đợt 11 — Chi tiết nhà theo giao diện form Thêm nhà + sửa lỗi nút Xóa nhà
+
+### 1. Màn hình chi tiết nhà viết lại theo đúng giao diện form Thêm nhà
+
+Màn hình chi tiết nhà (`houseDetail`, thêm ở đợt 9) trước đây dùng bố cục
+card/kv riêng. Nay viết lại để **nhìn như form Thêm nhà**: cùng wrapper
+`.form-card`, cùng thứ tự 5 phần, cùng tiêu đề phần (`.form-sec`/`.sec`)
+và cùng lưới trường (`.fgrid`/`.fld`) — chỉ khác là các ô nhập thành
+**giá trị text chỉ đọc** (không còn input/select/textarea nào trên trang).
+
+- **Phần 1 — Thông Tin Nhà** (đúng thứ tự form): Địa chỉ, Tỉnh/TP,
+  Quận/Huyện, Phường/Xã → khối vị trí bản đồ (khung `.map-real` hiển thị
+  tọa độ + link "Mở Google Maps", **không khởi tạo bản đồ tương tác**) →
+  Vĩ độ/Kinh độ → Ghi chú vị trí → lưới ảnh sổ đỏ → Tên nhà, Diện tích
+  sàn, Số tầng, Số phòng ngủ, Số nhà vệ sinh, Loại hình kinh doanh →
+  Thêm mô tả.
+- **Phần 2 — Chủ Nhà:** đủ hồ sơ + khối ảnh CMND/CCCD (mặt trước/sau,
+  bấm mở ảnh lớn).
+- **Phần 3 — Hợp Đồng:** Mã hợp đồng, Tiền thuê, Cọc, Ngày bắt đầu/kết
+  thúc, Số tháng thanh toán 1 lần, [Thời gian thanh toán — chỉ hiện khi
+  HĐ có `payDate`], Ngày thanh toán kỳ đầu, Ngày thanh toán tiếp theo
+  (suy ra bằng `nextPayDate()`, chỉ hiển thị, không lưu), Tổng số tiền
+  thanh toán, Trạng thái hợp đồng.
+- **Phần 4 — Mã Hóa Đơn dịch vụ:** điện/nước (mã, chủ tài khoản, tài
+  khoản; **mật khẩu che dạng `••••••`**).
+- **Phần 5 — Tài sản:** mỗi tài sản một dòng `.fgrid` như form (Mã, Loại,
+  Trạng thái, Ảnh, Note).
+- **Phần 6 — Phòng thuộc nhà** (chỉ có ở chi tiết, đặt sau Tài sản):
+  tổng phòng + trống/đã cọc/đã thuê + bảng phòng (tên bấm sang chi tiết
+  phòng).
+- Trường trống hiện "—". Nút **Sửa nhà** và **Quay lại** giữ nguyên ở đầu
+  và cuối trang. Không đổi logic nghiệp vụ: vẫn lấy dữ liệu từ cache
+  frontend, không thêm endpoint.
+
+**Kiểm chứng:** `node --check frontend/app.js` OK; harness jsdom
+**85/85 assert pass** (app.js thật, hôm nay cố định 24/10/2026): đủ 6
+phần đúng thứ tự với tiêu đề `.sec`, không còn `.kv`/`.card` cũ, 0
+input/select/textarea; đủ nhãn/giá trị (sổ đỏ 2 ảnh, CMND 2 mặt, kỳ đầu
+15/08/2026, ngày tiếp theo suy ra 15/11/2026, tổng tiền 15.000.000đ, mật
+khẩu bị che); HĐ không `payDate` thì ẩn dòng "Thời gian thanh toán";
+Sửa nhà mở đúng form (kỳ đầu nạp ngày đã lưu), Quay lại về danh sách.
+
+### 2. Sửa lỗi nút Xóa nhà không hoạt động sau khi nhập mật khẩu
+
+**Nguyên nhân thật sự (đã tái hiện):** nút Xóa ở Danh sách nhà gọi
+`delBtn('Nhà ...','houses', id)` → xác thực mật khẩu
+(`POST /auth/verify-password`) → `DELETE /api/houses/{id}` (router CRUD
+generic). Router này chỉ làm `db.delete(house); db.commit()` mà không
+xóa dữ liệu liên quan. Trên **PostgreSQL (Render)** các khóa ngoại tới
+`houses.id` (phòng, hợp đồng, hóa đơn, cọc, tài sản, mã điện/nước...)
+làm commit vi phạm FK → **HTTP 500 "Internal Server Error"** (text
+trơn, không có thông báo rõ ràng) — frontend chỉ hiện toast
+"Lỗi: Lỗi 500" trong 2,4 giây rồi biến mất nên người dùng cảm nhận là
+"nhập mật khẩu xong không thấy gì xảy ra, nhà vẫn còn". Trên SQLite
+test (không bật `PRAGMA foreign_keys`) lỗi này không lộ ra nên test cũ
+không bắt được. Đã tái hiện đúng bằng server thật + dữ liệu seed thật
+và bằng TestClient có bật FK pragma (mô phỏng PostgreSQL): nhà có
+5 phòng + 2 hợp đồng + 2 hóa đơn → DELETE trả 500, nhà còn nguyên;
+nhà không có dữ liệu liên quan → DELETE 200.
+
+**Cách sửa:**
+- **Backend:** thêm hook `before_delete` cho router CRUD generic
+  (`backend/routers/crud.py`); router houses gắn
+  `_delete_house_cascade` (`backend/main.py`): trong cùng 1 transaction,
+  xóa kèm toàn bộ dữ liệu thuộc về nhà — dòng hóa đơn + lịch sử thanh
+  toán + phiếu thu gắn hóa đơn, rồi hóa đơn, phiếu thu, chốt chỉ số,
+  chốt ĐN chủ nhà, hợp đồng thuê, cọc, xe, tài sản, chi tiêu, sự cố,
+  HĐ chủ nhà, thanh toán tiền nhà, phân công nhân viên, mã điện/nước,
+  cuối cùng là phòng; đồng thời dọn `houseIds` khỏi hồ sơ tài khoản.
+  Chủ nhà/khách thuê **không** bị xóa (có thể liên quan nhiều nhà).
+  Từ nay `DELETE /api/houses/{id}` trả 200 cả trên PostgreSQL.
+- **Frontend:** (a) nhánh 401 của `api()` không còn đăng xuất người
+  dùng khi đường dẫn là `/auth/verify-password` — trước đây nhập **sai**
+  mật khẩu ở modal Xóa là bị văng ra màn hình đăng nhập thay vì chỉ
+  báo "Mật khẩu không đúng"; nay modal còn mở, nút Xóa được bật lại,
+  nhà còn nguyên. (b) Modal xóa nhà hiển thị cảnh báo đỏ: xóa nhà sẽ
+  xóa kèm toàn bộ dữ liệu liên quan, không thể hoàn tác. (c) Sau khi
+  xóa nhà thành công, danh sách nạp lại toàn bộ dữ liệu (`loadAll`)
+  để không còn bản ghi mồ côi trong cache.
+- Các nút Xóa khác (phòng, cọc, HĐ...) không đổi hành vi — đã kiểm
+  chứng nút Xóa phòng vẫn hoạt động bình thường, không có cảnh báo
+  cascade của nhà.
+
+**Kiểm chứng:** pytest **65/65 pass** (63 cũ + 2 test mới trong
+`tests/test_delete_house.py`: xóa nhà đủ dữ liệu liên quan → 200, nhà
++ dữ liệu liên quan biến mất, chủ nhà/khách thuê còn nguyên; và cùng
+kịch bản với FK pragma bật → 200 thay vì 500); live-test có bật FK:
+DELETE nhà seed (5 phòng, 2 HĐ, 2 hóa đơn) → 200, 15 bảng liên quan
+đều về 0, chủ nhà/khách thuê còn đủ; harness jsdom **22/22 assert
+pass**: modal có cảnh báo cascade; mật khẩu sai → toast lỗi rõ ràng,
+không bị đăng xuất, nhà còn nguyên; mật khẩu đúng → toast "Đã xóa",
+nhà biến mất khỏi bảng; DELETE lỗi 500 → toast lỗi, nhà còn nguyên;
+xóa phòng vẫn hoạt động.
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

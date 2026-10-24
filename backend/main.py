@@ -129,11 +129,50 @@ def _enrich_asset(db, data):
         data["code"] = "%08d" % (mx + 1)
 
 
+def _delete_house_cascade(db, house):
+    """Xóa nhà kèm toàn bộ dữ liệu thuộc về nhà đó — sửa lỗi nút Xóa nhà
+    (đợt 11): trước đây delete_item chỉ db.delete(house) nên trên PostgreSQL
+    commit vi phạm FK houses.id -> 500, nhà vẫn còn, người dùng chỉ thấy
+    toast lỗi thoáng qua. Chạy trong cùng transaction với delete_item
+    (1 commit duy nhất). Chủ nhà/khách thuê KHÔNG bị xóa (có thể liên quan
+    nhiều nhà); chỉ dọn houseIds khỏi hồ sơ tài khoản nếu có."""
+    hid = house.id
+    room_ids = [r[0] for r in db.query(models.Room.id)
+                .filter(models.Room.houseId == hid).all()]
+    inv_ids = [i[0] for i in db.query(models.Invoice.id)
+               .filter(models.Invoice.houseId == hid).all()]
+    # Dòng con của hóa đơn (FK tới invoices.id) + phiếu thu gắn hóa đơn
+    if inv_ids:
+        db.query(models.InvoiceLine).filter(
+            models.InvoiceLine.invoiceId.in_(inv_ids)).delete(synchronize_session=False)
+        db.query(models.InvoicePayment).filter(
+            models.InvoicePayment.invoiceId.in_(inv_ids)).delete(synchronize_session=False)
+        db.query(models.Receipt).filter(
+            models.Receipt.invoiceId.in_(inv_ids)).delete(synchronize_session=False)
+    # Các bảng con trực tiếp của nhà (FK tới houses.id)
+    for model in (models.Invoice, models.Receipt, models.MeterReading,
+                  models.LandlordMeterReading, models.Contract, models.Deposit,
+                  models.Vehicle, models.Asset, models.Expense, models.Incident,
+                  models.LandlordContract, models.HousePayment,
+                  models.StaffAssignment, models.HouseUtility):
+        db.query(model).filter(model.houseId == hid).delete(synchronize_session=False)
+    if room_ids:
+        # Các bản ghi chỉ gắn roomId (houseId nullable) cũng thuộc về nhà này
+        for model in (models.Receipt, models.Vehicle, models.Asset,
+                      models.Expense, models.Incident):
+            db.query(model).filter(model.roomId.in_(room_ids)).delete(synchronize_session=False)
+    db.query(models.Room).filter(models.Room.houseId == hid).delete(synchronize_session=False)
+    for acc in db.query(models.Account).all():
+        ids = acc.houseIds or []
+        if hid in ids:
+            acc.houseIds = [x for x in ids if x != hid]
+
+
 # ----- Router xác thực (login công khai, còn lại tự bảo vệ trong router) -----
 app.include_router(auth.router, prefix=API)
 
 # ----- Router CRUD cho từng module -----
-app.include_router(make_crud_router(models.House, schemas.HouseOut, schemas.HouseCreate, schemas.HouseUpdate, API + "/houses", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.House, schemas.HouseOut, schemas.HouseCreate, schemas.HouseUpdate, API + "/houses", dependencies=_LOGIN_REQUIRED, before_delete=_delete_house_cascade), prefix="")
 app.include_router(make_crud_router(models.Room, schemas.RoomOut, schemas.RoomCreate, schemas.RoomUpdate, API + "/rooms", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Customer, schemas.CustomerOut, schemas.CustomerCreate, schemas.CustomerUpdate, API + "/customers", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.MeterReading, schemas.MeterReadingOut, schemas.MeterReadingCreate, schemas.MeterReadingUpdate, API + "/meter-readings", dependencies=_LOGIN_REQUIRED), prefix="")

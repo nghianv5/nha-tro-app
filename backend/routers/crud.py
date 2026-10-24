@@ -8,6 +8,8 @@ Tham số bảo mật (tùy chọn):
 - write_dependencies: dependency thêm cho POST/PUT/DELETE (vd chỉ admin).
 - create_mapper: hàm biến đổi dict dữ liệu trước khi tạo bản ghi
   (vd accounts: tách 'password' -> băm thành 'passwordHash').
+- before_delete: hook chạy TRƯỚC khi xóa bản ghi, trong cùng transaction
+  (vd xóa nhà: xóa kèm dữ liệu liên quan để không vi phạm FK trên PostgreSQL).
 """
 from typing import List, Optional
 
@@ -22,7 +24,7 @@ FILTER_PARAMS = ["houseId", "roomId", "status", "kind", "type", "month",
 
 def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
                      dependencies=None, write_dependencies=None, create_mapper=None,
-                     create_enrich=None):
+                     create_enrich=None, before_delete=None):
     """create_enrich(db, data): hook tùy chọn chạy TRƯỚC khi tạo bản ghi, có
     quyền truy cập DB (vd tự sinh mã HĐ cọc/phiếu thu từ tên phòng)."""
     router = APIRouter(prefix=prefix, tags=[prefix.strip("/")],
@@ -89,6 +91,8 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(404, "Không tìm thấy bản ghi")
+        if before_delete is not None:
+            before_delete(db, obj)
         db.delete(obj)
         db.commit()
         return {"ok": True, "id": item_id}
