@@ -1359,12 +1359,17 @@ var ROOM_TYPES_FORM = ['Chung cư mini','Homestay','Phòng trọ','Phòng đơn'
 var ROOM_FIXED_SV = [['dien','Điện',true],['nuoc','Nước',true],['dienChung','Điện chung',false],['vesinh','Vệ sinh',false],['internet','Internet',false]];
 var SV_UNITS = [['so','số'],['nguoi','người'],['phong','phòng'],['xe','xe']];
 function svUnitLabel(u){ var m = { so:'số', nguoi:'người', phong:'phòng', xe:'xe' }; return m[u] || u || ''; }
-function roomSvState(sv){
+function roomSvState(sv, showDefaults){
   sv = sv || {};
-  var rows = ROOM_FIXED_SV.map(function(f){
-    return { key: f[0], name: f[1], hasUnit: f[2],
+  var rows = [];
+  ROOM_FIXED_SV.forEach(function(f){
+    /* Sửa phòng: chỉ hiện dịch vụ cố định mà phòng đã lưu (dịch vụ đã xóa
+       trước đó không tự hiện lại với giá mặc định). Thêm phòng mới:
+       showDefaults=true nên vẫn hiện đủ 5 dịch vụ mặc định như trước. */
+    if(!showDefaults && sv[f[0]] === undefined) return;
+    rows.push({ key: f[0], name: f[1], hasUnit: f[2],
       price: svPriceOf(sv[f[0]], f[0]==='dien' ? 3000 : (f[0]==='nuoc' ? 20000 : (f[0]==='dienChung' ? 30000 : (f[0]==='vesinh' ? 20000 : 50000)))),
-      unit: f[2] ? svUnitOf(sv[f[0]], f[0]==='dien' ? 'so' : 'nguoi') : 'nguoi', editing: false };
+      unit: f[2] ? svUnitOf(sv[f[0]], f[0]==='dien' ? 'so' : 'nguoi') : 'nguoi', editing: false });
   });
   (sv.extra || []).forEach(function(x){ if(x && x.name) rows.push({ key:'', name: x.name, hasUnit:true, price: x.price || 0, unit: x.unit || 'phong', editing:false }); });
   return rows;
@@ -1381,7 +1386,9 @@ function renderRoomSvRows(){
     return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed #eceff1">' +
       '<span style="flex:1"><b>'+esc(rw.name)+'</b> — '+fmtNum(rw.price)+' vnđ/'+esc(svUnitLabel(rw.unit))+'</span>' +
       '<button type="button" class="btn sm" onclick="editRoomSvRow('+i+')">Sửa</button>' +
-      (rw.key ? '' : '<button type="button" class="btn sm red" onclick="delRoomSvRow('+i+')">Xóa</button>') + '</div>';
+      /* Mọi dịch vụ đều xóa được (kể cả dịch vụ cố định): Xóa ở đây chỉ gỡ
+         dòng khỏi form trước khi lưu, chưa chạm tới danh mục Dịch vụ chung. */
+      '<button type="button" class="btn sm red" onclick="delRoomSvRow('+i+')">Xóa</button></div>';
   }).join('');
 }
 function editRoomSvRow(i){ window._rsvRows[i].editing = true; renderRoomSvRows(); }
@@ -1449,7 +1456,7 @@ function viewRoomForm(p){
   h += '<div class="btnrow"><button class="btn green" type="submit">'+(r ? 'Lưu thay đổi' : 'Thêm phòng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'rooms\')">Quay lại</button></div></form>';
   setContent(h);
-  window._rsvRows = roomSvState(sv);
+  window._rsvRows = roomSvState(sv, !r);
   renderRoomSvRows();
 }
 function saveRoom(id){
