@@ -37,6 +37,39 @@ def test_landlord_contract_pay_date_roundtrip(client):
     assert mine and mine[0]["payDate"] == "2026-09-20"
 
 
+# ---------- Đợt 9: firstPayDate (Ngày thanh toán kỳ đầu, nhập tay) tạo/cập nhật/đọc lại ----------
+def test_landlord_contract_first_pay_date_roundtrip(client):
+    ll = client.post("/api/landlords", json={"name": "Chủ Kỳ Đầu", "phone": "0900009900"}).json()
+    house = make_house(client, "99 Đường Kỳ Đầu")
+    r = client.post("/api/landlord-contracts", json={
+        "landlordId": ll["id"], "houseId": house["id"], "rentPrice": 5000000,
+        "deposit": 5000000, "startDate": "2026-08-01", "endDate": "2027-07-31",
+        "payMonths": 3, "payDate": "2026-08-15", "firstPayDate": "2026-08-15"})
+    assert r.status_code == 201, r.text
+    lc = r.json()
+    assert lc["firstPayDate"] == "2026-08-15"
+
+    got = client.get(f"/api/landlord-contracts/{lc['id']}").json()
+    assert got["firstPayDate"] == "2026-08-15"
+
+    # Cập nhật firstPayDate -> đọc lại đúng giá trị mới (ngày đã lưu là chính thức)
+    r = client.put(f"/api/landlord-contracts/{lc['id']}", json={"firstPayDate": "2026-12-20"})
+    assert r.status_code == 200, r.text
+    assert r.json()["firstPayDate"] == "2026-12-20"
+    got = client.get(f"/api/landlord-contracts/{lc['id']}").json()
+    assert got["firstPayDate"] == "2026-12-20"
+
+    # Cập nhật trường khác (không gửi firstPayDate) -> firstPayDate KHÔNG bị xóa
+    r = client.put(f"/api/landlord-contracts/{lc['id']}", json={"rentPrice": 6000000})
+    assert r.status_code == 200, r.text
+    assert r.json()["firstPayDate"] == "2026-12-20"
+
+    # Danh sách cũng trả về firstPayDate
+    items = client.get("/api/landlord-contracts").json()
+    mine = [x for x in items if x["id"] == lc["id"]]
+    assert mine and mine[0]["firstPayDate"] == "2026-12-20"
+
+
 # ---------- Đợt 8: ensure_columns thêm pay_date trên DB cũ ----------
 def test_ensure_columns_pay_date_on_legacy_db():
     from sqlalchemy import create_engine, inspect
@@ -56,4 +89,5 @@ def test_ensure_columns_pay_date_on_legacy_db():
     insp = inspect(eng)
     cols = {c["name"] for c in insp.get_columns("landlord_contracts")}
     assert "pay_date" in cols
+    assert "first_pay_date" in cols  # Đợt 9: thêm cùng đợt kiểm này
     eng.dispose()

@@ -630,6 +630,7 @@ class LandlordContractCreate(BaseModel):
     payFromDay: Optional[int] = 1
     payToDay: Optional[int] = 3
     payDate: Optional[DateType] = None
+    firstPayDate: Optional[DateType] = None
     status: Optional[str] = "active"
 
 
@@ -646,6 +647,7 @@ class LandlordContractUpdate(BaseModel):
     payFromDay: Optional[int] = None
     payToDay: Optional[int] = None
     payDate: Optional[DateType] = None
+    firstPayDate: Optional[DateType] = None
     status: Optional[str] = None
 
 

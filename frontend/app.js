@@ -390,14 +390,18 @@ function addMonthsClamped(iso, months){
   var last = new Date(y, m, 0).getDate();
   return y + '-' + String(m).padStart(2,'0') + '-' + String(Math.min(d, last)).padStart(2,'0');
 }
-/* Đợt 8: hàm CHUNG tính "Ngày thanh toán tiếp theo" của 1 hợp đồng chủ nhà.
-   Neo = payDate (Thời gian thanh toán cụ thể), trống thì dùng startDate;
+/* Hàm CHUNG suy ra "Ngày thanh toán tiếp theo" của 1 hợp đồng chủ nhà
+   (Đợt 8 lập hàm, Đợt 9 chỉnh thứ tự neo). Đây là ngày SUY RA — chỉ dùng cho
+   bộ lọc "Sắp đến hạn thanh toán", cột cùng tên ở Danh sách nhà và màn hình
+   chi tiết nhà; KHÔNG ghi ngược vào dữ liệu đã lưu.
+   Neo theo thứ tự ưu tiên: firstPayDate (Ngày thanh toán KỲ ĐẦU do người
+   dùng nhập) -> payDate (Thời gian thanh toán cụ thể) -> startDate;
    bước nhảy = payMonths (mặc định 1, tối thiểu 1); từ neo cộng dồn từng bước
-   cho đến ngày đầu tiên >= hôm nay. Hợp đồng cũ không có cả payDate lẫn
-   startDate thì fallback về logic payDay theo tháng như trước. */
+   cho đến ngày đầu tiên >= hôm nay. Hợp đồng cũ không có ngày neo nào thì
+   fallback về logic payDay theo tháng như trước. */
 function nextPayDate(lc){
   if(!lc) return '';
-  var anchor = lc.payDate || lc.startDate || '';
+  var anchor = lc.firstPayDate || lc.payDate || lc.startDate || '';
   if(anchor){
     var step = Math.max(1, parseInt(lc.payMonths, 10) || 1);
     var t = today(), cand = anchor, guard = 0;
@@ -410,21 +414,25 @@ function nextPayDate(lc){
   if(c2 < today()){ m++; if(m>12){ m=1; y++; } c2 = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0'); }
   return c2;
 }
-/* Đợt 8: cập nhật trực tiếp 2 ô chỉ đọc trong form nhà (phần Hợp Đồng):
-   "Ngày thanh toán tiếp theo" + "Tổng số tiền thanh toán" */
+/* Cập nhật trực tiếp trong form nhà (phần Hợp Đồng) khi người dùng gõ:
+   - "Tổng số tiền thanh toán" (ô chỉ đọc) = Tiền thuê x Số tháng.
+   - "Ngày thanh toán kỳ đầu" (lc_firstpay) là ô NGƯỜI DÙNG NHẬP (Đợt 9):
+     chỉ điền sẵn GỢI Ý (tính từ payDate/startDate + payMonths như đợt 8)
+     khi ô đang TRỐNG — tuyệt đối không ghi đè giá trị người dùng đã nhập
+     hoặc đã lưu, vì ngày kỳ đầu đã lưu là dữ liệu chính thức. */
 function lcFormRefresh(){
-  var nextEl = document.getElementById('lc_nextpay');
-  if(nextEl){
+  var firstEl = document.getElementById('lc_firstpay');
+  if(firstEl && !firstEl.value){
     var probe = { payDate: val('lc_paydate') || null, startDate: val('lc_start') || null,
       payMonths: num(val('lc_paymonths')) || 1, payDay: 0 };
-    nextEl.value = fmtDate(nextPayDate(probe));
+    firstEl.value = nextPayDate(probe);
   }
   var totEl = document.getElementById('lc_total');
   if(totEl) totEl.value = fmtNum((num(val('lc_rent')) || 0) * (num(val('lc_paymonths')) || 1));
 }
 
 /* ---------- Điều hướng ---------- */
-var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', houseUtilities:'houses', utilityForm:'houses',
+var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', houseDetail:'houses', houseUtilities:'houses', utilityForm:'houses',
   rooms:'rooms', roomForm:'rooms', roomDetail:'rooms', deposits:'deposits', depositForm:'deposits',
   contracts:'contracts', contractForm:'contracts', contractDetail:'contracts', liquidate:'contracts', landlordContractForm:'contracts', landlordForm:'contracts',
   invoices:'invoices', invoiceDetail:'invoices', monthlyForm:'invoices', otherForm:'invoices', specialInvoices:'invoices', specialSend:'invoices', invoiceEdit:'invoices', invoicePrint:'invoices', paymentsAll:'invoices',
@@ -628,17 +636,136 @@ function renderHouseRows(){
     if(f.endto && (!lc || !lc.endDate || lc.endDate > f.endto)) return false;
     return true;
   });
-  wrap.innerHTML = tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà (vnđ)','Tổng số tiền thanh toán','Ngày thanh toán tiếp theo','Ngày kết thúc hợp đồng','Sửa','Xóa'], list.map(function(hs, i){
+  wrap.innerHTML = tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà (vnđ)','Tổng số tiền thanh toán','Ngày thanh toán tiếp theo','Ngày kết thúc hợp đồng','Chi tiết','Sửa','Xóa'], list.map(function(hs, i){
     var lc = landlordContractOf(hs.id);
     var ll = houseLandlordOf(hs);
     /* Đợt 8 (mục 4b): Tổng số tiền thanh toán = Tiền thuê x Số tháng thanh toán 1 lần */
     var lcTotal = lc ? (Number(lc.rentPrice) || 0) * Math.max(1, parseInt(lc.payMonths, 10) || 1) : null;
-    return '<tr><td>'+(i+1)+'</td><td><b>'+esc(hs.name || hs.address)+'</b></td><td>'+esc(houseFullAddr(hs))+'</td>' +
+    /* Đợt 9: cột "Ngày thanh toán tiếp theo" dùng CHUNG một giá trị suy ra
+       nextPayDate(lc) với bộ lọc "Sắp đến hạn thanh toán" ở trên và màn hình
+       chi tiết nhà — không có HĐ/ngày neo thì hiện "—" */
+    var npd = nextPayDate(lc);
+    return '<tr><td>'+(i+1)+'</td><td><a onclick="go(\'houseDetail\',{id:\''+hs.id+'\'})"><b>'+esc(hs.name || hs.address)+'</b></a></td><td>'+esc(houseFullAddr(hs))+'</td>' +
       '<td>'+esc(ll ? ll.name : '')+'</td><td>'+esc(ll ? ll.phone : '')+'</td><td>'+esc(lc ? (lc.code || '') : '')+'</td>' +
-      '<td class="price">'+(lc ? fmtNum(lc.rentPrice) : '')+'</td><td class="price">'+(lc ? fmtNum(lcTotal) : '—')+'</td><td>'+fmtDate(nextPayDate(lc))+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
+      '<td class="price">'+(lc ? fmtNum(lc.rentPrice) : '')+'</td><td class="price">'+(lc ? fmtNum(lcTotal) : '—')+'</td><td>'+(npd ? fmtDate(npd) : '—')+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
+      '<td class="act"><button class="linkbtn" onclick="go(\'houseDetail\',{id:\''+hs.id+'\'})">Chi tiết</button></td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa</button></td>' +
       '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Nhà '+esc(hs.name || hs.address)+'\',\'houses\',\''+hs.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có nhà nào');
+}
+/* ----- Màn hình CHI TIẾT NHÀ (Đợt 9): bấm tên nhà hoặc nút "Chi tiết" ở
+   Danh sách nhà -> xem TOÀN BỘ thông tin của nhà, trình bày theo đúng các
+   phần của form Thêm nhà (+ phòng thuộc nhà). Dữ liệu lấy từ cache db đã
+   nạp sẵn, không gọi thêm API. Trường trống hiện "—". ----- */
+function viewHouseDetail(p){
+  var hs = p.id ? byId(db.houses, p.id) : null;
+  if(!hs){ toast('Không tìm thấy nhà'); go('houses'); return; }
+  /* HĐ chủ nhà: ưu tiên HĐ đang hiệu lực (landlordContractOf); nhà chỉ còn
+     HĐ đã thanh lý thì vẫn hiện HĐ gần nhất kèm trạng thái của nó */
+  var lc = landlordContractOf(hs.id);
+  if(!lc){
+    var lcs = db.landlordContracts.filter(function(x){ return x.houseId === hs.id; });
+    lc = lcs.length ? lcs[lcs.length - 1] : null;
+  }
+  var ll = houseLandlordOf(hs) || (lc ? byId(db.landlords, lc.landlordId) : null);
+  /* Mô tả: tách tiền tố "Vị trí bản đồ: ..." như form nhà vẫn lưu */
+  var desc = hs.description || '', mapNote = '';
+  if(desc.indexOf('Vị trí bản đồ: ') === 0){ var parts = desc.split('\n'); mapNote = parts[0].slice('Vị trí bản đồ: '.length); desc = parts.slice(1).join('\n'); }
+  var huDien = null, huNuoc = null;
+  db.houseUtilities.forEach(function(u){ if(u.houseId === hs.id){ if(u.type==='dien' && !huDien) huDien = u; if(u.type==='nuoc' && !huNuoc) huNuoc = u; } });
+  var llAssets = db.assets.filter(function(a){ return a.houseId === hs.id && a.ownerType === 'landlord'; });
+  var rooms = db.rooms.filter(function(r){ return r.houseId === hs.id; });
+  var cnt = { empty:0, deposited:0, rented:0 };
+  rooms.forEach(function(r){ cnt[roomStatus(r)]++; });
+  var dv = function(v){ return (v === null || v === undefined || String(v).trim() === '') ? '—' : esc(v); };
+  var row = function(label, valHtml){ return '<div class="kv"><span>'+esc(label)+'</span><span>'+valHtml+'</span></div>'; };
+  var sec = function(title, inner){ return '<div class="card" style="margin-top:14px"><h3 class="sec" style="margin-top:0">'+esc(title)+'</h3>'+inner+'</div>'; };
+  var cmndCell = function(label, url){
+    return '<div style="flex:1;min-width:140px"><div style="font-size:12.5px;color:#616161;margin-bottom:4px">'+esc(label)+'</div>' +
+      (url ? '<a href="'+esc(url)+'" target="_blank" rel="noopener"><img class="doc-thumb" src="'+esc(url)+'" alt="Ảnh CMND '+esc(label)+'"></a>' : '<div>—</div>') + '</div>';
+  };
+  var huBlock = function(label, u){
+    return '<h4 style="margin:12px 0 4px;font-size:14px;color:#37474f">'+esc(label)+'</h4>' +
+      row('Mã hóa đơn', u ? dv(u.customerCode) : '—') +
+      row('Chủ tài khoản', u ? dv(u.accountHolder) : '—') +
+      row('Tài khoản', u ? dv(u.username) : '—') +
+      row('Mật khẩu', (u && u.password) ? '••••••' : '—');
+  };
+  var h = pageTitle('Chi tiết nhà — ' + (hs.name || hs.address));
+  h += '<div class="btnrow"><button class="btn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa nhà</button>' +
+    '<button class="btn gray" onclick="go(\'houses\')">Quay lại</button></div>';
+  /* --- Phần 1: Thông Tin Nhà --- */
+  h += '<div class="card"><h3 class="sec" style="margin-top:0">Thông Tin Nhà</h3>' +
+    row('Tên nhà', dv(hs.name)) +
+    row('Địa chỉ', dv(houseFullAddr(hs))) +
+    row('Diện tích sàn', hs.floorArea ? dv(hs.floorArea) + ' m2' : '—') +
+    row('Số tầng', dv(hs.floors)) +
+    row('Số phòng ngủ', dv(hs.bedrooms)) +
+    row('Số nhà vệ sinh', dv(hs.bathrooms)) +
+    row('Loại hình kinh doanh', dv(hs.businessType)) +
+    row('Mô tả', desc ? esc(desc).replace(/\n/g, '<br>') : '—') +
+    (mapNote ? row('Ghi chú vị trí trên bản đồ', esc(mapNote)) : '') +
+    row('Vị trí trên bản đồ', (hs.latitude != null && hs.longitude != null)
+      ? esc(hs.latitude + ', ' + hs.longitude) + ' — <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + hs.latitude + ',' + hs.longitude + '">Mở Google Maps ↗</a>' : '—') +
+    '<div style="margin-top:10px"><div style="font-size:13px;color:#757575;margin-bottom:6px">Ảnh sổ đỏ</div>' +
+    ((hs.redBookImages && hs.redBookImages.length)
+      ? '<div class="rb-grid">' + hs.redBookImages.map(function(u){ return '<a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh sổ đỏ"></a>'; }).join('') + '</div>'
+      : '<div>—</div>') +
+    '</div></div>';
+  /* --- Phần 2: Chủ Nhà --- */
+  var llHtml;
+  if(ll){
+    llHtml = row('Họ tên', dv(ll.name)) +
+      row('Ngày sinh', ll.dob ? fmtDate(ll.dob) : '—') +
+      row('Địa chỉ thường trú', dv(ll.permanentAddress || ll.address)) +
+      row('SDT', dv(ll.phone)) +
+      row('Giới tính', dv(ll.gender)) +
+      row('Nghề nghiệp', dv(ll.job)) +
+      row('Tình trạng hôn nhân', dv(ll.maritalStatus)) +
+      row('Mail', dv(ll.email)) +
+      row('CMND', dv(ll.idCard)) +
+      '<div style="margin-top:10px"><div style="font-size:13px;color:#757575;margin-bottom:6px">Ảnh CMND/CCCD</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' + cmndCell('Mặt trước', ll.idCardImage1) + cmndCell('Mặt sau', ll.idCardImage2) + '</div></div>';
+  } else llHtml = '<div class="empty-note">Chưa có thông tin chủ nhà</div>';
+  h += sec('Chủ Nhà', llHtml);
+  /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
+  var lcHtml;
+  if(lc){
+    var lcTotal = (Number(lc.rentPrice) || 0) * Math.max(1, parseInt(lc.payMonths, 10) || 1);
+    var npd = nextPayDate(lc);
+    lcHtml = row('Mã hợp đồng', dv(lc.code)) +
+      row('Tiền thuê', fmt(lc.rentPrice)) +
+      row('Tiền cọc', fmt(lc.deposit)) +
+      row('Ngày bắt đầu', lc.startDate ? fmtDate(lc.startDate) : '—') +
+      row('Ngày kết thúc', lc.endDate ? fmtDate(lc.endDate) : '—') +
+      row('Thời gian thanh toán', lc.payDate ? fmtDate(lc.payDate) : ('Ngày ' + (lc.payFromDay || lc.payDay || 1) + ' đến ' + (lc.payToDay || 3))) +
+      row('Ngày thanh toán kỳ đầu', lc.firstPayDate ? fmtDate(lc.firstPayDate) : '—') +
+      row('Số tháng thanh toán 1 lần', dv(Math.max(1, parseInt(lc.payMonths, 10) || 1))) +
+      row('Ngày thanh toán tiếp theo', npd ? fmtDate(npd) : '—') +
+      row('Tổng số tiền thanh toán', fmt(lcTotal)) +
+      row('Trạng thái hợp đồng', lc.status === 'liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>' : '<span class="badge b-paid">Đang hiệu lực</span>');
+  } else lcHtml = '<div class="empty-note">Chưa có hợp đồng chủ nhà</div>';
+  h += sec('Hợp Đồng', lcHtml);
+  /* --- Phần 4: Mã Hóa Đơn dịch vụ --- */
+  h += sec('Mã Hóa Đơn dịch vụ', huBlock('Điện', huDien) + huBlock('Nước', huNuoc));
+  /* --- Phần 5: Tài sản của chủ nhà --- */
+  h += sec('Tài sản', tableHtml(['Loại','Trạng thái','Ghi chú','Ảnh'], llAssets.map(function(a){
+    return '<tr><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td><td>'+esc(a.note || '')+'</td>' +
+      '<td>'+(a.imageUrl ? '<a href="'+esc(a.imageUrl)+'" target="_blank" rel="noopener"><img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản"></a>' : '—')+'</td></tr>';
+  }).join(''), 'Chưa có tài sản'));
+  /* --- Phần 6: Phòng thuộc nhà --- */
+  var roomsHtml = row('Tổng số phòng', dv(rooms.length)) +
+    row('Phòng trống', dv(cnt.empty)) +
+    row('Phòng đã cọc', dv(cnt.deposited)) +
+    row('Phòng đã thuê', dv(cnt.rented)) +
+    tableHtml(['Phòng','Tầng','Giá','Trạng thái'], rooms.map(function(r){
+      return '<tr><td><a onclick="go(\'roomDetail\',{id:\''+r.id+'\'})"><b>'+esc(r.name)+'</b></a></td><td>'+dv(r.floor)+'</td>' +
+        '<td class="price">'+fmt(r.price)+'</td><td>'+statusBadge(roomStatus(r))+'</td></tr>';
+    }).join(''), 'Chưa có phòng nào');
+  h += sec('Phòng thuộc nhà', roomsHtml);
+  h += '<div class="btnrow"><button class="btn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa nhà</button>' +
+    '<button class="btn gray" onclick="go(\'houses\')">Quay lại</button></div>';
+  setContent(h);
 }
 /* Đợt 5: Loại hình kinh doanh đúng 4 lựa chọn của ảnh thiết kế form nhà */
 var HOUSE_BUSINESS_TYPES = ['Homestay','Chung cư mini','Phòng đơn','Phòng trọ'];
@@ -740,10 +867,12 @@ function viewHouseForm(p){
     landlordCmndHtml(ll, 'l') +
     '</div></div>' +
     /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
-    /* Đợt 8 (mục 2+3+4a): "Thời gian thanh toán" là 1 NGÀY cụ thể (lc_paydate);
-       "Ngày thanh toán tiếp theo" + "Tổng số tiền thanh toán" là 2 ô chỉ đọc,
-       tự cập nhật ngay khi đổi Tiền thuê / Số tháng / Thời gian thanh toán
-       (hàm lcFormRefresh, tính bằng hàm chung nextPayDate). */
+    /* Đợt 8: "Thời gian thanh toán" là 1 NGÀY cụ thể (lc_paydate); "Tổng số
+       tiền thanh toán" là ô chỉ đọc tự cập nhật (hàm lcFormRefresh).
+       Đợt 9: bỏ ô "Ngày thanh toán tiếp theo" tự gen khỏi form — thay bằng ô
+       date NHẬP TAY "Ngày thanh toán kỳ đầu" (lc_firstpay, lưu vào
+       firstPayDate của HĐ): sửa nhà thì nạp ngày đã lưu, chưa có thì điền
+       sẵn gợi ý = nextPayDate(lc) tính từ payDate để người dùng sửa. */
     '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3><div class="fgrid">' +
     fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number', 'oninput="lcFormRefresh()"'), true) +
     fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number'), true) +
@@ -751,7 +880,7 @@ function viewHouseForm(p){
     fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date'), true) +
     fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number', 'oninput="lcFormRefresh()" onchange="lcFormRefresh()"'), true) +
     fld('Thời gian thanh toán', inp('lc_paydate', lc ? (lc.payDate || '') : '', 'date', 'onchange="lcFormRefresh()"'), true) +
-    fld('Ngày thanh toán tiếp theo', inp('lc_nextpay', '', 'text', 'readonly')) +
+    fld('Ngày thanh toán kỳ đầu', inp('lc_firstpay', lc ? (lc.firstPayDate || nextPayDate(lc)) : '', 'date', 'onchange="lcFormRefresh()"')) +
     fld('Tổng số tiền thanh toán (vnđ)', inp('lc_total', '', 'text', 'readonly')) +
     '</div></div>' +
     /* --- Phần 4: Mã Hóa Đơn dịch vụ --- */
@@ -779,7 +908,8 @@ function viewHouseForm(p){
   houseMapInit(hs);
   window._rbImages = (hs && Array.isArray(hs.redBookImages)) ? hs.redBookImages.slice() : [];
   rbRender();
-  /* Đợt 8: nạp sẵn 2 ô chỉ đọc của phần Hợp Đồng (Ngày TT tiếp theo + Tổng tiền TT) */
+  /* Nạp sẵn phần Hợp Đồng: ô Tổng tiền TT (chỉ đọc) + gợi ý Ngày TT kỳ đầu
+     nếu ô đang trống (không ghi đè ngày đã lưu/đã nạp ở trên) */
   lcFormRefresh();
   /* Chế độ sửa: nạp sẵn các tài sản chủ nhà hiện có của nhà thành từng dòng */
   llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || ''); });
@@ -840,6 +970,8 @@ function saveHouse(id){
         var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
           deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
           endDate: val('lc_end') || null, payDate: payDateVal,
+          /* Đợt 9: Ngày thanh toán kỳ đầu do người dùng nhập ở form (lc_firstpay) */
+          firstPayDate: val('lc_firstpay') || null,
           payDay: payDateVal ? Number(payDateVal.split('-')[2]) : (existedLc ? (existedLc.payDay || 5) : 5),
           payMonths: num(val('lc_paymonths')) || 1, status: 'active' };
         if(existedLc){ lcData.payFromDay = existedLc.payFromDay; lcData.payToDay = existedLc.payToDay; }
@@ -1011,7 +1143,7 @@ function landlordMeterHtml(){
   }).join(''), 'Chưa có lần chốt nào');
   return h;
 }
-VIEWS.houses = viewHouses; VIEWS.houseForm = viewHouseForm;
+VIEWS.houses = viewHouses; VIEWS.houseForm = viewHouseForm; VIEWS.houseDetail = viewHouseDetail;
 VIEWS.houseUtilities = viewHouseUtilities;
 VIEWS.utilityForm = function(p){
   if(p.lm){ /* form chốt điện nước chủ nhà */

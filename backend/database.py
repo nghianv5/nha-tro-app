@@ -140,6 +140,7 @@ NEW_COLUMNS = {
         "pay_from_day": "INTEGER DEFAULT 1",
         "pay_to_day": "INTEGER DEFAULT 3",
         "pay_date": "DATE",  # Đợt 8 — Thời gian thanh toán cụ thể (nullable)
+        "first_pay_date": "DATE",  # Đợt 9 — Ngày thanh toán kỳ đầu do người dùng nhập (nullable)
     },
 }
 

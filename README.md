@@ -515,6 +515,70 @@ ngày thì lọt lọc "Sắp đến hạn", cách 50 ngày thì bị ẩn; cộ
 đúng giá trị, nhà không HĐ hiện "—"; danh sách HĐ chủ nhà hiện ngày cụ thể
 khi có `payDate`, giữ dạng cũ khi chưa có).
 
+## Đợt 9 — Màn hình chi tiết nhà + "Ngày thanh toán kỳ đầu" nhập tay
+
+**1. Màn hình CHI TIẾT NHÀ (mới):** ở bảng Danh sách nhà, **tên nhà là
+link bấm được** và có thêm **cột/nút "Chi tiết"** cạnh Sửa/Xóa (route
+`houseDetail`) — mở trang chi tiết hiển thị **toàn bộ thông tin của nhà**
+theo đúng các phần của form Thêm nhà, dữ liệu lấy từ cache frontend đã nạp
+sẵn (không thêm endpoint):
+
+- **Thông Tin Nhà:** tên nhà, địa chỉ đầy đủ, diện tích sàn, số tầng, số
+  phòng ngủ, số nhà vệ sinh, loại hình kinh doanh, mô tả, tọa độ + link
+  "Mở Google Maps", **ảnh sổ đỏ** dạng lưới thumbnail (bấm mở ảnh lớn).
+- **Chủ Nhà:** họ tên, ngày sinh, địa chỉ thường trú, SĐT, giới tính, nghề
+  nghiệp, tình trạng hôn nhân, mail, số CMND, **ảnh CMND mặt trước/sau**.
+- **Hợp Đồng (với chủ nhà):** mã HĐ, tiền thuê, tiền cọc, ngày bắt đầu/kết
+  thúc, "Thời gian thanh toán" (`payDate`), **"Ngày thanh toán kỳ đầu"**
+  (`firstPayDate` đã lưu), số tháng thanh toán 1 lần, **"Ngày thanh toán
+  tiếp theo"** (ngày suy ra — xem mục 2), **tổng số tiền thanh toán**
+  (thuê × số tháng), trạng thái HĐ. Chưa có HĐ thì ghi "Chưa có hợp đồng
+  chủ nhà".
+- **Mã Hóa Đơn dịch vụ:** điện + nước (mã hóa đơn, chủ tài khoản, tài
+  khoản; **mật khẩu luôn che `••••••`**).
+- **Tài sản của chủ nhà** thuộc nhà (loại, trạng thái, ghi chú, thumbnail
+  ảnh) và **Phòng thuộc nhà**: tổng số phòng + trống/đã cọc/đã thuê kèm
+  bảng phòng (tên, tầng, giá, trạng thái; bấm tên phòng sang chi tiết
+  phòng). Có nút **Sửa nhà** và **Quay lại**. Trường trống hiện "—".
+
+**2. Mô hình ngày thanh toán (chốt lại ở đợt này):**
+
+- **"Ngày thanh toán kỳ đầu" (`firstPayDate`) là ngày người dùng TỰ NHẬP**
+  ở form Thêm/Sửa nhà — ngày thanh toán của **kỳ đầu tiên**. Đây là ô
+  `<input type="date">` (`lc_firstpay`); **ô chỉ đọc "Ngày thanh toán tiếp
+  theo" tự gen của đợt 8 đã BỎ khỏi form**. Backend thêm cột
+  `landlord_contracts.first_pay_date` (DATE, nullable — qua
+  `ensure_columns()` + model/schema `firstPayDate`). Khi sửa nhà: nạp đúng
+  ngày đã lưu; HĐ chưa có thì **điền sẵn gợi ý** = ngày tính được từ
+  `payDate` (hàm `nextPayDate()`), người dùng sửa được; gợi ý chỉ điền khi
+  ô đang trống, **không bao giờ ghi đè** giá trị người dùng đã nhập, và
+  **ngày kỳ đầu đã lưu không bao giờ bị hệ thống tự sửa/cuộn**.
+- **"Ngày thanh toán tiếp theo" là ngày SUY RA (không nhập, không lưu):**
+  hàm chung `nextPayDate()` cuộn từ ngày neo với bước nhảy = "Số tháng
+  thanh toán 1 lần" tới ngày đầu tiên ≥ hôm nay; thứ tự ưu tiên neo:
+  **`firstPayDate` → `payDate` → `startDate`** → fallback `payDay` theo
+  tháng như cũ. Giá trị suy ra này dùng **chung một kiểu tính duy nhất**
+  cho: **cột "Ngày thanh toán tiếp theo" ở Danh sách nhà** (nhà không có
+  HĐ/ngày neo thì hiện "—"), **bộ lọc "Sắp đến hạn thanh toán" (45 ngày)**
+  và **màn hình chi tiết nhà**.
+- Form HĐ chủ nhà độc lập không có ô kỳ đầu; vì API cập nhật dùng
+  `exclude_unset`, lưu từ form đó **không xóa** `firstPayDate` đã lưu.
+
+**Kiểm chứng:** pytest **62/62 pass** (61 cũ + 1 test mới: tạo/cập nhật/đọc
+lại `firstPayDate` qua API, cập nhật trường khác không làm mất
+`firstPayDate`; `ensure_columns` thêm `first_pay_date` trên DB cũ mô
+phỏng); `node --check frontend/app.js` OK; harness jsdom **62/62 assert
+pass** (hôm nay cố định 24/10/2026: bấm tên nhà/nút Chi tiết mở chi tiết
+đủ 6 phần với đúng giá trị — kỳ đầu 15/08/2026 hiện đúng ngày đã lưu, ngày
+tiếp theo suy ra **15/11/2026**, tổng tiền 15.000.000đ, mật khẩu bị che,
+thumbnail sổ đỏ/CMND/tài sản render, thống kê phòng 3/1/1/1; Sửa nhà mở
+đúng form, Quay lại về danh sách; cột DS nhà hiện 15/11/2026 cho nhà kỳ
+đầu 15/08/2026 + 3 tháng và "—" cho nhà không HĐ; lọc Sắp đến hạn: nhà
+suy ra +22 ngày hiện, nhà kỳ đầu 25/12/2026 ẩn **dù** `payDate` của nó suy
+ra chỉ +6 ngày — neo kỳ đầu thắng; form: ô kỳ đầu là date nhập được,
+không còn ô tự gen, gợi ý điền khi trống và không ghi đè khi người dùng
+đã sửa, lưu nhà gửi đúng `firstPayDate` người dùng nhập 20/12/2026).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

@@ -329,6 +329,7 @@ class LandlordContract(TimestampMixin, Base):
     payFromDay = Column("pay_from_day", Integer, default=1)   # Thời gian thanh toán từ ngày
     payToDay = Column("pay_to_day", Integer, default=3)       # đến ngày
     payDate = Column("pay_date", Date, nullable=True)  # Đợt 8 — Thời gian thanh toán: 1 ngày cụ thể (neo tính kỳ TT tiếp theo)
+    firstPayDate = Column("first_pay_date", Date, nullable=True)  # Đợt 9 — Ngày thanh toán KỲ ĐẦU do NGƯỜI DÙNG nhập ở form nhà (hệ thống không bao giờ tự sửa ngày đã lưu; chỉ là neo ưu tiên nhất để suy ra "Ngày thanh toán tiếp theo")
     status = Column(String, default="active")  # active | liquidated (SPEC-WEB)
 
 
