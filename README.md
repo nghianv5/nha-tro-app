@@ -579,6 +579,44 @@ ra chỉ +6 ngày — neo kỳ đầu thắng; form: ô kỳ đầu là date nh�
 không còn ô tự gen, gợi ý điền khi trống và không ghi đè khi người dùng
 đã sửa, lưu nhà gửi đúng `firstPayDate` người dùng nhập 20/12/2026).
 
+## Đợt 10 — Bỏ ô "Thời gian thanh toán" khỏi form Thêm/Sửa nhà
+
+Theo yêu cầu: form Thêm/Sửa nhà (một form chung) **bỏ hẳn ô "Thời gian
+thanh toán"** (`lc_paydate`, trường bắt buộc của đợt 8) trong phần Hợp
+Đồng — mốc chính từ nay chỉ là **"Ngày thanh toán kỳ đầu"** do người dùng
+nhập tay.
+
+- `saveHouse` **ngừng gửi khóa `payDate`** (payload bỏ hẳn): API cập nhật
+  dùng `exclude_unset` nên `payDate` đã lưu trong DB của các hợp đồng cũ
+  **được giữ nguyên, không bị xóa trắng**. Cột `landlord_contracts.pay_date`
+  và mọi dữ liệu cũ giữ nguyên; `payDate` vẫn là neo dự phòng trong hàm
+  `nextPayDate()` (thứ tự neo `firstPayDate → payDate → startDate` không
+  đổi) — nên **cột "Ngày thanh toán tiếp theo" ở Danh sách nhà, màn hình
+  chi tiết nhà và bộ lọc "Sắp đến hạn thanh toán" không đổi hành vi**: vẫn
+  suy ra từ ngày kỳ đầu + "Số tháng thanh toán 1 lần" cuộn tới kỳ sắp tới,
+  neo kỳ đầu thắng tuyệt đối (ví dụ: kỳ đầu 15/08/2026, mỗi 3 tháng, hôm
+  nay 24/10/2026 → **15/11/2026**).
+- **Gợi ý ô kỳ đầu** trong `lcFormRefresh()` đổi căn cứ: từ nay tính từ
+  **Ngày bắt đầu hợp đồng (`lc_start`)** + số tháng (không còn đọc ô
+  `lc_paydate` đã bỏ); vẫn chỉ điền khi ô kỳ đầu đang trống, **không bao
+  giờ ghi đè** giá trị người dùng nhập. Ô "Tổng số tiền thanh toán" cập
+  nhật như cũ.
+- **Màn hình chi tiết nhà:** dòng "Thời gian thanh toán" **chỉ hiển thị
+  khi hợp đồng có `payDate`**; không có thì ẩn hẳn dòng đó (khỏi hiện
+  dạng dự phòng/thừa).
+
+**Kiểm chứng:** pytest **63/63 pass** (62 cũ + 1 test mới: cập nhật HĐ
+bằng payload kiểu `saveHouse` mới — không có khóa `payDate` — thì
+`payDate` cũ trong DB vẫn nguyên); `node --check frontend/app.js` OK;
+harness jsdom **39/39 assert pass** (hôm nay cố định 24/10/2026): form
+Thêm + Sửa không còn `#lc_paydate`/nhãn "Thời gian thanh toán"; payload
+POST/PUT khi lưu nhà không có khóa `payDate`, `firstPayDate` gửi đúng
+ngày nhập; gợi ý kỳ đầu sửa H4 = 01/11/2026 từ ngày bắt đầu (không còn
+15/11 từ `payDate`); cột DS nhà khẳng định lại ví dụ kỳ đầu 15/08/2026 +
+3 tháng → 15/11/2026, neo kỳ đầu thắng `payDate` ở cả cột/lọc/chi tiết;
+chi tiết nhà ẩn dòng "Thời gian thanh toán" khi HĐ không có `payDate` và
+hiện khi có.
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

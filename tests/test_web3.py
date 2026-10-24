@@ -37,6 +37,31 @@ def test_landlord_contract_pay_date_roundtrip(client):
     assert mine and mine[0]["payDate"] == "2026-09-20"
 
 
+# ---------- Bỏ ô "Thời gian thanh toán" khỏi form nhà: update không gửi payDate -> giữ nguyên ----------
+def test_landlord_contract_update_without_paydate_preserves_it(client):
+    ll = client.post("/api/landlords", json={"name": "Chủ Giữ PayDate", "phone": "0900008811"}).json()
+    house = make_house(client, "81 Đường Giữ Ngày")
+    r = client.post("/api/landlord-contracts", json={
+        "landlordId": ll["id"], "houseId": house["id"], "rentPrice": 5000000,
+        "deposit": 5000000, "startDate": "2026-08-01", "endDate": "2027-07-31",
+        "payMonths": 3, "payDate": "2026-08-15", "firstPayDate": "2026-08-15"})
+    assert r.status_code == 201, r.text
+    lc = r.json()
+    assert lc["payDate"] == "2026-08-15"
+
+    # Payload mô phỏng saveHouse SAU khi bỏ ô lc_paydate khỏi form: có đủ các
+    # trường form gửi nhưng KHÔNG có khóa payDate -> payDate cũ phải còn nguyên
+    r = client.put(f"/api/landlord-contracts/{lc['id']}", json={
+        "landlordId": ll["id"], "houseId": house["id"], "rentPrice": 5500000,
+        "deposit": 5000000, "startDate": "2026-08-01", "endDate": "2027-07-31",
+        "firstPayDate": "2026-12-20", "payDay": 15, "payMonths": 3, "status": "active"})
+    assert r.status_code == 200, r.text
+    assert r.json()["payDate"] == "2026-08-15"  # không bị xóa trắng
+    got = client.get(f"/api/landlord-contracts/{lc['id']}").json()
+    assert got["payDate"] == "2026-08-15"
+    assert got["firstPayDate"] == "2026-12-20"
+
+
 # ---------- Đợt 9: firstPayDate (Ngày thanh toán kỳ đầu, nhập tay) tạo/cập nhật/đọc lại ----------
 def test_landlord_contract_first_pay_date_roundtrip(client):
     ll = client.post("/api/landlords", json={"name": "Chủ Kỳ Đầu", "phone": "0900009900"}).json()

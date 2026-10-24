@@ -417,13 +417,16 @@ function nextPayDate(lc){
 /* Cập nhật trực tiếp trong form nhà (phần Hợp Đồng) khi người dùng gõ:
    - "Tổng số tiền thanh toán" (ô chỉ đọc) = Tiền thuê x Số tháng.
    - "Ngày thanh toán kỳ đầu" (lc_firstpay) là ô NGƯỜI DÙNG NHẬP (Đợt 9):
-     chỉ điền sẵn GỢI Ý (tính từ payDate/startDate + payMonths như đợt 8)
+     chỉ điền sẵn GỢI Ý (tính từ Ngày bắt đầu hợp đồng lc_start + payMonths)
      khi ô đang TRỐNG — tuyệt đối không ghi đè giá trị người dùng đã nhập
-     hoặc đã lưu, vì ngày kỳ đầu đã lưu là dữ liệu chính thức. */
+     hoặc đã lưu, vì ngày kỳ đầu đã lưu là dữ liệu chính thức.
+     (Ô "Thời gian thanh toán" lc_paydate đã bỏ khỏi form theo yêu cầu —
+     payDate chỉ còn là dữ liệu cũ trong DB, vẫn là 1 neo dự phòng của
+     nextPayDate cho các hợp đồng cũ.) */
 function lcFormRefresh(){
   var firstEl = document.getElementById('lc_firstpay');
   if(firstEl && !firstEl.value){
-    var probe = { payDate: val('lc_paydate') || null, startDate: val('lc_start') || null,
+    var probe = { startDate: val('lc_start') || null,
       payMonths: num(val('lc_paymonths')) || 1, payDay: 0 };
     firstEl.value = nextPayDate(probe);
   }
@@ -738,7 +741,7 @@ function viewHouseDetail(p){
       row('Tiền cọc', fmt(lc.deposit)) +
       row('Ngày bắt đầu', lc.startDate ? fmtDate(lc.startDate) : '—') +
       row('Ngày kết thúc', lc.endDate ? fmtDate(lc.endDate) : '—') +
-      row('Thời gian thanh toán', lc.payDate ? fmtDate(lc.payDate) : ('Ngày ' + (lc.payFromDay || lc.payDay || 1) + ' đến ' + (lc.payToDay || 3))) +
+      (lc.payDate ? row('Thời gian thanh toán', fmtDate(lc.payDate)) : '') +
       row('Ngày thanh toán kỳ đầu', lc.firstPayDate ? fmtDate(lc.firstPayDate) : '—') +
       row('Số tháng thanh toán 1 lần', dv(Math.max(1, parseInt(lc.payMonths, 10) || 1))) +
       row('Ngày thanh toán tiếp theo', npd ? fmtDate(npd) : '—') +
@@ -867,20 +870,21 @@ function viewHouseForm(p){
     landlordCmndHtml(ll, 'l') +
     '</div></div>' +
     /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
-    /* Đợt 8: "Thời gian thanh toán" là 1 NGÀY cụ thể (lc_paydate); "Tổng số
-       tiền thanh toán" là ô chỉ đọc tự cập nhật (hàm lcFormRefresh).
+    /* "Tổng số tiền thanh toán" là ô chỉ đọc tự cập nhật (hàm lcFormRefresh).
        Đợt 9: bỏ ô "Ngày thanh toán tiếp theo" tự gen khỏi form — thay bằng ô
        date NHẬP TAY "Ngày thanh toán kỳ đầu" (lc_firstpay, lưu vào
-       firstPayDate của HĐ): sửa nhà thì nạp ngày đã lưu, chưa có thì điền
-       sẵn gợi ý = nextPayDate(lc) tính từ payDate để người dùng sửa. */
+       firstPayDate của HĐ): sửa nhà thì nạp ngày đã lưu, chưa có thì
+       lcFormRefresh() điền sẵn gợi ý tính từ Ngày bắt đầu để người dùng sửa.
+       Ô "Thời gian thanh toán" (lc_paydate/payDate, thêm ở đợt 8) đã BỎ
+       khỏi form theo yêu cầu — form không gửi payDate nữa, giá trị cũ trong
+       DB được giữ nguyên (API update dùng exclude_unset). */
     '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3><div class="fgrid">' +
     fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number', 'oninput="lcFormRefresh()"'), true) +
     fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number'), true) +
     fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date', 'onchange="lcFormRefresh()"'), true) +
     fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date'), true) +
     fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number', 'oninput="lcFormRefresh()" onchange="lcFormRefresh()"'), true) +
-    fld('Thời gian thanh toán', inp('lc_paydate', lc ? (lc.payDate || '') : '', 'date', 'onchange="lcFormRefresh()"'), true) +
-    fld('Ngày thanh toán kỳ đầu', inp('lc_firstpay', lc ? (lc.firstPayDate || nextPayDate(lc)) : '', 'date', 'onchange="lcFormRefresh()"')) +
+    fld('Ngày thanh toán kỳ đầu', inp('lc_firstpay', lc ? (lc.firstPayDate || '') : '', 'date', 'onchange="lcFormRefresh()"')) +
     fld('Tổng số tiền thanh toán (vnđ)', inp('lc_total', '', 'text', 'readonly')) +
     '</div></div>' +
     /* --- Phần 4: Mã Hóa Đơn dịch vụ --- */
@@ -962,17 +966,17 @@ function saveHouse(id){
       // Hợp đồng chủ nhà (hễ phần Hợp Đồng có nhập tiền thuê thì tạo/cập nhật)
       var rent = num(val('lc_rent'));
       if(rent){
-        /* Đợt 8 (mục 2): gửi payDate (ngày cụ thể); payDay suy từ ngày trong
-           tháng của payDate; payFromDay/payToDay giữ nguyên của HĐ cũ nếu có
-           (không ghi đè dữ liệu cũ), HĐ mới để backend dùng mặc định. */
-        var payDateVal = val('lc_paydate') || null;
+        /* Form KHÔNG gửi payDate nữa (ô "Thời gian thanh toán" đã bỏ khỏi
+           form): API update dùng exclude_unset nên payDate đã lưu trong DB
+           của HĐ cũ được giữ nguyên, không bị xóa trắng. payFromDay/payToDay
+           cũng giữ nguyên của HĐ cũ nếu có (không ghi đè dữ liệu cũ). */
         var existedLc = id ? landlordContractOf(id) : null;
         var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
           deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
-          endDate: val('lc_end') || null, payDate: payDateVal,
+          endDate: val('lc_end') || null,
           /* Đợt 9: Ngày thanh toán kỳ đầu do người dùng nhập ở form (lc_firstpay) */
           firstPayDate: val('lc_firstpay') || null,
-          payDay: payDateVal ? Number(payDateVal.split('-')[2]) : (existedLc ? (existedLc.payDay || 5) : 5),
+          payDay: existedLc ? (existedLc.payDay || 5) : 5,
           payMonths: num(val('lc_paymonths')) || 1, status: 'active' };
         if(existedLc){ lcData.payFromDay = existedLc.payFromDay; lcData.payToDay = existedLc.payToDay; }
         jobs.push(existedLc ? updateRec('landlordContracts', existedLc.id, lcData) : createRec('landlordContracts', lcData));
