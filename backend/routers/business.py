@@ -1,4 +1,4 @@
-"""Endpoints nghiệp vụ: dashboard, phân tích, hóa đơn, thanh lý, seed."""
+"""Endpoints nghiệp vụ: dashboard, phân tích, hóa đơn, thanh lý."""
 import re
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -677,13 +677,3 @@ def delete_landlord_meter(item_id: str, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return {"ok": True, "id": item_id}
-
-
-# ================================================================
-# Nạp / nạp lại dữ liệu mẫu
-# ================================================================
-@router.post("/seed")
-def reseed(db: Session = Depends(get_db)):
-    from ..seed import seed_db
-    seed_db(db, force=True)
-    return {"ok": True}

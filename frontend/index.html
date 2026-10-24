@@ -40,6 +40,15 @@
     </div>
   </header>
   <main id="content"><div class="loading">Đang tải dữ liệu...</div></main>
+  <!-- Đợt 15: thanh điều hướng dưới cùng cho mobile (desktop ẩn, xem styles.css) -->
+  <nav class="bottomnav" id="bottomNav">
+    <a data-nav="dashboard" onclick="go('dashboard')"><span class="bn-ic">&#127968;</span><span>Tổng quan</span></a>
+    <a data-nav="houses" onclick="go('houses')"><span class="bn-ic">&#127968;</span><span>Nhà trọ</span></a>
+    <a data-nav="rooms" onclick="go('rooms')"><span class="bn-ic">&#128682;</span><span>Phòng</span></a>
+    <a data-nav="invoices" onclick="go('invoices')"><span class="bn-ic">&#129534;</span><span>Hóa đơn</span></a>
+    <a data-nav="finance" onclick="go('finance')"><span class="bn-ic">&#128176;</span><span>Tài chính</span></a>
+    <a data-nav="notifications" onclick="go('notifications')"><span class="bn-ic">&#128276;</span><span>Thông báo</span></a>
+  </nav>
 </div>
 <div id="loginRoot"></div>
 <div id="modalRoot"></div>

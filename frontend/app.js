@@ -453,7 +453,7 @@ function go(view, params){
   curView = view; curParams = params || {};
   var fn = VIEWS[view];
   if(!fn){ toast('Màn hình chưa có: ' + view); return; }
-  document.querySelectorAll('#mainNav [data-nav]').forEach(function(a){
+  document.querySelectorAll('#mainNav [data-nav], #bottomNav [data-nav]').forEach(function(a){
     a.classList.toggle('on', a.getAttribute('data-nav') === (NAVMAP[view] || view));
   });
   document.getElementById('content').innerHTML = '<div class="loading">Đang tải...</div>';
@@ -1250,9 +1250,11 @@ function viewRooms(){
       chk('rf_am_park', 'Chỗ gửi xe', (f.amenities||[]).indexOf('__park')>=0) + '</span></div>' +
     '<button class="btn" onclick="applyRoomFilter()">Lọc</button></div>';
   h += '<div class="btnrow"><button class="btn green" onclick="go(\'roomForm\')">+ Thêm phòng</button>' +
+    '<button class="btn" onclick="downloadSampleCsv()">Tải file mẫu</button>' +
     '<button class="btn" onclick="document.getElementById(\'csvFile\').click()">Thêm phòng bằng file</button>' +
     '<input type="file" id="csvFile" accept=".csv" style="display:none" onchange="importRoomsCsv(this)">' +
-    '<button class="btn gray" onclick="exportRoomsCsv()">Tải file danh sách phòng</button></div>';
+    '<button class="btn gray" onclick="exportRoomsCsv()">Tải file danh sách phòng</button></div>' +
+    '<p style="color:#757575;font-size:13px;margin:-4px 0 12px">Import bằng file .csv (mở được bằng Excel): chọn 1 nhà ở bộ lọc phía trên trước, rồi bấm "Thêm phòng bằng file". Giá và cọc trong file tính bằng vnđ, không phải triệu.</p>';
   var list = filteredRooms();
   /* Đợt 5: đúng thứ tự cột của ảnh; Cọc/Giá phòng hiển thị theo TRIỆU thập phân */
   h += tableHtml(['STT','Tên nhà','Tầng','Tên phòng','Cọc (triệu)','Giá phòng (triệu)','Diện tích (m2)','Loại phòng','Trạng thái','Chung chủ','Vệ sinh','Số phòng','Gác xép','Bếp','Số người tối đa','Dịch vụ','Sửa','Xóa'], list.map(function(r, i){
@@ -1302,8 +1304,13 @@ function applyRoomFilter(){
 }
 function csvCell(v){ v = String(v==null?'':v); return v.indexOf(',')>=0 || v.indexOf('"')>=0 ? '"'+v.replace(/"/g,'""')+'"' : v; }
 function downloadSampleCsv(){
-  var rows = [['name','floor','area','type','toilet','kitchen','price','minDeposit','maxPeople'],
-    ['Phòng 301',3,30,'Phòng trọ','Khép kín','Trong phòng',3000000,3000000,3]];
+  /* Đợt 14: file mẫu import phòng — đúng các cột importRoomsCsv đọc, thêm
+     subRooms và 3 dòng ví dụ. Giá/cọc tính bằng vnđ. Nhà KHÔNG có trong
+     file: người dùng chọn 1 nhà ở bộ lọc trước khi import. */
+  var rows = [['name','floor','area','type','toilet','kitchen','price','minDeposit','maxPeople','subRooms'],
+    ['Phòng 301',3,30,'Phòng trọ','Khép kín','Trong phòng',3000000,3000000,3,0],
+    ['Phòng 302',3,28,'Phòng trọ','Khép kín','Trong phòng',2800000,2800000,2,0],
+    ['Phòng 303',3,32,'Studio','Khép kín','Trong phòng',3500000,3500000,3,0]];
   downloadText('mau-them-phong.csv', rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n'));
 }
 function exportRoomsCsv(){
@@ -3221,9 +3228,8 @@ function viewSettings(){
       fld('Tài khoản', selObj('rp_acc', db.accounts, '', function(a){ return a.name + ' — ' + a.phone; })) +
       fld('Mật khẩu mới', inp('rp_pw', '', 'password')) + '</div>' +
       '<div class="btnrow"><button class="btn orange" type="submit">Đặt lại mật khẩu</button></div></form>';
-    h += '<div class="card" style="margin-top:14px"><h3 class="sec" style="margin-top:0">Dữ liệu mẫu</h3>' +
-      '<p style="color:#616161">Xóa toàn bộ dữ liệu hiện tại và nạp lại dữ liệu mẫu như ban đầu.</p>' +
-      '<div class="btnrow"><button class="btn red" onclick="reseed()">Xóa dữ liệu & nạp lại dữ liệu mẫu</button></div></div>';
+    /* Đợt 14: đã gỡ hẳn chức năng "Xóa dữ liệu & nạp lại dữ liệu mẫu" khỏi
+       Cài đặt vì rủi ro bấm nhầm làm mất toàn bộ dữ liệu thật. */
   }
   h += '<div class="btnrow"><button class="btn gray" onclick="doLogout()">Đăng xuất</button></div>';
   setContent(h);
@@ -3238,11 +3244,6 @@ function adminResetPw(){
   if(!id || !pw){ toast('Chọn tài khoản và nhập mật khẩu mới'); return; }
   api('/accounts/' + id + '/reset-password', 'POST', { new_password: pw })
     .then(function(){ toast('Đã đặt lại mật khẩu'); }).catch(errToast);
-}
-function reseed(){
-  if(!confirm('Xóa toàn bộ dữ liệu và nạp lại dữ liệu mẫu?')) return;
-  api('/seed', 'POST', {}).then(function(){ return loadAll(); })
-    .then(function(){ toast('Đã nạp lại dữ liệu mẫu'); go('dashboard'); }).catch(errToast);
 }
 VIEWS.vehicles = viewVehicles; VIEWS.vehicleForm = viewVehicleForm;
 VIEWS.assets = viewAssets; VIEWS.assetForm = viewAssetForm;

@@ -179,3 +179,39 @@ textarea{resize:vertical;min-height:56px}
   .rb-thumb{width:96px;height:96px}
   .notif-item{padding:10px 12px}
 }
+
+/* ----- Đợt 15: trực quan hơn trên web + mobile (không đổi luồng dữ liệu) ----- */
+/* Web + mobile: ô đang nhập và nút bấm phản hồi rõ ràng hơn */
+input:focus,select:focus,textarea:focus{border-color:#1565c0;outline:2px solid rgba(21,101,192,.28);outline-offset:0}
+.btn{transition:background .15s,transform .05s}
+.btn:active{transform:translateY(1px)}
+.stat:hover{box-shadow:0 3px 10px rgba(0,0,0,.12)}
+/* Thanh điều hướng dưới cùng: desktop ẩn hoàn toàn */
+.bottomnav{display:none}
+@media (max-width:768px){
+  /* Thanh dưới: 6 mục chính, ngón tay cái với tới, không che nội dung */
+  .bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:100;background:#fff;border-top:1px solid #e0e0e0;box-shadow:0 -2px 12px rgba(0,0,0,.12);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  .bottomnav a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#757575;text-decoration:none;font-size:11px;font-weight:600;padding:4px 2px;border-radius:8px;min-height:52px}
+  .bottomnav a.on{color:#1565c0;background:#e3f2fd}
+  .bottomnav .bn-ic{font-size:20px;line-height:1}
+  /* Chừa chỗ cho thanh dưới, tránh nội dung cuối trang bị che */
+  main{padding:14px 10px 88px}
+  /* Header gọn lại: tên người dùng không đẩy nút Đăng xuất ra ngoài */
+  .userbox span{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Bảng cuộn ngang: cột đầu tiên dính lại để vẫn biết đang xem dòng nào */
+  .tblwrap th:first-child,.tblwrap td:first-child{position:sticky;left:0;z-index:2}
+  .tblwrap th:first-child{background:#e3f2fd}
+  .tblwrap td:first-child{background:#fff;box-shadow:2px 0 4px rgba(0,0,0,.06)}
+  .tblwrap tr:hover td:first-child{background:#f5f9ff}
+  /* Nút Sửa/Xóa trong bảng đủ lớn để chạm, không bấm nhầm */
+  .tblwrap td.act .linkbtn{padding:10px 8px;font-size:14px}
+  /* Checkbox tiện ích đủ cao để chạm */
+  .chk{min-height:44px}
+  /* Form dài: nút Lưu luôn nhìn thấy khi cuộn, nằm trên thanh dưới */
+  .form-card > .btnrow:last-child{position:sticky;bottom:68px;background:#fff;padding:12px 0 4px;margin-bottom:0;border-top:1px solid #eceff1;z-index:5}
+}
+@media (max-width:400px){
+  .bottomnav a{font-size:10.5px}
+  .bottomnav .bn-ic{font-size:18px}
+  .brand{font-size:16px}
+}

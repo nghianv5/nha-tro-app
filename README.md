@@ -75,11 +75,11 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000
 Mở http://localhost:8000. Đổi chuỗi kết nối qua biến môi trường `DATABASE_URL` nếu cần
 (DB SQLite cũng chạy được, vd để thử nhanh: `DATABASE_URL=sqlite:///./nhatro.db`).
 
-### Nạp / nạp lại dữ liệu mẫu
+### Nạp dữ liệu mẫu
 
 - Tự động: khi DB trống, server tự seed ở lần khởi động đầu.
-- Thủ công: `python -m backend.seed`
-- Từ giao diện: Cài đặt → "Xóa dữ liệu & nạp lại dữ liệu mẫu" (gọi `POST /api/seed`).
+- Thủ công: `python -m backend.seed` (cũng chỉ nạp khi DB trống).
+- Đợt 14 đã gỡ hẳn chức năng "Xóa dữ liệu & nạp lại dữ liệu mẫu" khỏi giao diện và API để tránh bấm nhầm làm mất dữ liệu thật.
 
 ### Chạy test
 
@@ -161,7 +161,6 @@ nha-tro-app/
 | Thông báo | `GET /api/notifications` — tổng hợp: sự cố chưa sửa, HĐ sắp hết hạn ≤30 ngày, hóa đơn chưa thanh toán, cọc sắp hết hạn (mới nhất trước) |
 | Dashboard | `GET /api/dashboard` — tiền sắp thu, phòng trống, cọc, sự cố chưa xong, hóa đơn chưa TT, chưa chốt điện nước, sắp hết HĐ, quá hạn |
 | Phân tích | `GET /api/analytics/summary` — thu (**theo phiếu thu**, ngày thu) / chi (phiếu chi + tiền nhà đã trả) / lợi nhuận 6 tháng + dòng vốn lũy kế |
-| Seed lại | `POST /api/seed` |
 | Health | `GET /api/health` |
 
 ## Khái niệm mới ở bản web

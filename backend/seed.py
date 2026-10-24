@@ -1,7 +1,9 @@
 """Nạp dữ liệu mẫu đúng SPEC / thiết kế Balsamiq.
 
 Chạy độc lập:  python -m backend.seed
-Hoặc qua API:  POST /api/seed  (xóa dữ liệu cũ và nạp lại)
+Chỉ nạp khi DB còn trống (lần chạy đầu). Đợt 14 đã gỡ hẳn chức năng
+xóa toàn bộ dữ liệu và nạp lại, nên không còn đường nào nạp đè lên
+dữ liệu hiện có.
 """
 from datetime import date
 
@@ -34,19 +36,8 @@ def ensure_auth_accounts(db):
     db.commit()
 
 
-def seed_db(db, force=False):
-    """Nạp dữ liệu mẫu. force=True: xóa toàn bộ dữ liệu hiện có trước."""
-    if force:
-        for model in (models.InvoiceLine, models.InvoicePayment, models.Invoice,
-                      models.Receipt, models.HouseUtility, models.StaffAssignment,
-                      models.Position, models.MeterReading,
-                      models.LandlordMeterReading, models.Contract, models.Deposit,
-                      models.Incident, models.Expense, models.Vehicle, models.Asset,
-                      models.Room, models.HousePayment, models.LandlordContract,
-                      models.House, models.Customer, models.Landlord, models.Account,
-                      models.Service, models.Unit):
-            db.query(model).delete()
-        db.commit()
+def seed_db(db):
+    """Nạp dữ liệu mẫu, chỉ khi DB còn trống. Không bao giờ xóa dữ liệu cũ."""
     if db.query(models.House).count() > 0:
         # DB đã có dữ liệu: chỉ xử lý nâng cấp tài khoản cũ chưa có mật khẩu
         ensure_auth_accounts(db)
