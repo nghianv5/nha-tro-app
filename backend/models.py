@@ -328,6 +328,7 @@ class LandlordContract(TimestampMixin, Base):
     payMonths = Column("pay_months", Integer, default=1)      # Số tháng thanh toán 1 lần (SPEC-WEB-2 A)
     payFromDay = Column("pay_from_day", Integer, default=1)   # Thời gian thanh toán từ ngày
     payToDay = Column("pay_to_day", Integer, default=3)       # đến ngày
+    payDate = Column("pay_date", Date, nullable=True)  # Đợt 8 — Thời gian thanh toán: 1 ngày cụ thể (neo tính kỳ TT tiếp theo)
     status = Column(String, default="active")  # active | liquidated (SPEC-WEB)
 
 

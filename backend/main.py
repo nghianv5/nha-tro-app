@@ -111,6 +111,10 @@ def _enrich_landlord_contract(db, data):
     # payDay (dùng tính "Ngày TT tiếp theo") đồng bộ từ payFromDay mới (SPEC-WEB-2 A)
     if data.get("payFromDay"):
         data["payDay"] = data["payFromDay"]
+    # Đợt 8: có payDate (Thời gian thanh toán — ngày cụ thể) thì payDay suy từ
+    # ngày trong tháng của payDate để các hiển thị cũ theo payDay vẫn khớp.
+    if data.get("payDate") is not None:
+        data["payDay"] = data["payDate"].day
 
 
 def _enrich_asset(db, data):

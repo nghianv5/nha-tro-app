@@ -382,12 +382,45 @@ function lastReading(roomId, type){
   list.sort(function(a,b){ return (a.date||'') < (b.date||'') ? -1 : 1; });
   return list.length? list[list.length-1] : null;
 }
+/* Đợt 8: cộng tháng có kẹp ngày cuối tháng (vd 31/01 + 1 tháng -> 28/02) */
+function addMonthsClamped(iso, months){
+  var p = String(iso||'').split('-'); if(p.length !== 3) return '';
+  var y = Number(p[0]), m = Number(p[1]) + months, d = Number(p[2]);
+  y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1;
+  var last = new Date(y, m, 0).getDate();
+  return y + '-' + String(m).padStart(2,'0') + '-' + String(Math.min(d, last)).padStart(2,'0');
+}
+/* Đợt 8: hàm CHUNG tính "Ngày thanh toán tiếp theo" của 1 hợp đồng chủ nhà.
+   Neo = payDate (Thời gian thanh toán cụ thể), trống thì dùng startDate;
+   bước nhảy = payMonths (mặc định 1, tối thiểu 1); từ neo cộng dồn từng bước
+   cho đến ngày đầu tiên >= hôm nay. Hợp đồng cũ không có cả payDate lẫn
+   startDate thì fallback về logic payDay theo tháng như trước. */
 function nextPayDate(lc){
-  if(!lc || !lc.payDay) return '';
-  var t = today(), parts = t.split('-'), y = Number(parts[0]), m = Number(parts[1]);
-  var cand = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0');
-  if(cand < t){ m++; if(m>12){ m=1; y++; } cand = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0'); }
-  return cand;
+  if(!lc) return '';
+  var anchor = lc.payDate || lc.startDate || '';
+  if(anchor){
+    var step = Math.max(1, parseInt(lc.payMonths, 10) || 1);
+    var t = today(), cand = anchor, guard = 0;
+    while(cand < t && guard++ < 1200) cand = addMonthsClamped(cand, step);
+    return cand >= t ? cand : '';
+  }
+  if(!lc.payDay) return '';
+  var tp = today().split('-'), y = Number(tp[0]), m = Number(tp[1]);
+  var c2 = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0');
+  if(c2 < today()){ m++; if(m>12){ m=1; y++; } c2 = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0'); }
+  return c2;
+}
+/* Đợt 8: cập nhật trực tiếp 2 ô chỉ đọc trong form nhà (phần Hợp Đồng):
+   "Ngày thanh toán tiếp theo" + "Tổng số tiền thanh toán" */
+function lcFormRefresh(){
+  var nextEl = document.getElementById('lc_nextpay');
+  if(nextEl){
+    var probe = { payDate: val('lc_paydate') || null, startDate: val('lc_start') || null,
+      payMonths: num(val('lc_paymonths')) || 1, payDay: 0 };
+    nextEl.value = fmtDate(nextPayDate(probe));
+  }
+  var totEl = document.getElementById('lc_total');
+  if(totEl) totEl.value = fmtNum((num(val('lc_rent')) || 0) * (num(val('lc_paymonths')) || 1));
 }
 
 /* ---------- Điều hướng ---------- */
@@ -586,7 +619,8 @@ function renderHouseRows(){
     if(f.address && houseFullAddr(hs).toLowerCase().indexOf(f.address.toLowerCase()) < 0) return false;
     if(f.phone && (!ll || (ll.phone || '').toLowerCase().indexOf(f.phone.toLowerCase()) < 0)) return false;
     var npd = nextPayDate(lc);
-    if(f.soonpay && (!npd || diffDays(today(), npd) < 0 || diffDays(today(), npd) > 30)) return false;
+    /* Đợt 8 (mục 1): "Sắp đến hạn thanh toán" = ngày TT tiếp theo trong vòng 1,5 tháng (45 ngày) */
+    if(f.soonpay && (!npd || diffDays(today(), npd) < 0 || diffDays(today(), npd) > 45)) return false;
     if(f.payfrom && (!npd || npd < f.payfrom)) return false;
     if(f.payto && (!npd || npd > f.payto)) return false;
     if(f.soonend && (!lc || !lc.endDate || diffDays(today(), lc.endDate) < 0 || diffDays(today(), lc.endDate) > 30)) return false;
@@ -594,12 +628,14 @@ function renderHouseRows(){
     if(f.endto && (!lc || !lc.endDate || lc.endDate > f.endto)) return false;
     return true;
   });
-  wrap.innerHTML = tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà (vnđ)','Ngày thanh toán tiếp theo','Ngày kết thúc hợp đồng','Sửa','Xóa'], list.map(function(hs, i){
+  wrap.innerHTML = tableHtml(['STT','Tên nhà','Địa chỉ','Chủ nhà','SDT chủ nhà','Mã hợp đồng','Giá thuê nhà (vnđ)','Tổng số tiền thanh toán','Ngày thanh toán tiếp theo','Ngày kết thúc hợp đồng','Sửa','Xóa'], list.map(function(hs, i){
     var lc = landlordContractOf(hs.id);
     var ll = houseLandlordOf(hs);
+    /* Đợt 8 (mục 4b): Tổng số tiền thanh toán = Tiền thuê x Số tháng thanh toán 1 lần */
+    var lcTotal = lc ? (Number(lc.rentPrice) || 0) * Math.max(1, parseInt(lc.payMonths, 10) || 1) : null;
     return '<tr><td>'+(i+1)+'</td><td><b>'+esc(hs.name || hs.address)+'</b></td><td>'+esc(houseFullAddr(hs))+'</td>' +
       '<td>'+esc(ll ? ll.name : '')+'</td><td>'+esc(ll ? ll.phone : '')+'</td><td>'+esc(lc ? (lc.code || '') : '')+'</td>' +
-      '<td class="price">'+(lc ? fmtNum(lc.rentPrice) : '')+'</td><td>'+fmtDate(nextPayDate(lc))+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
+      '<td class="price">'+(lc ? fmtNum(lc.rentPrice) : '')+'</td><td class="price">'+(lc ? fmtNum(lcTotal) : '—')+'</td><td>'+fmtDate(nextPayDate(lc))+'</td><td>'+(lc ? fmtDate(lc.endDate) : '')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'houseForm\',{id:\''+hs.id+'\'})">Sửa</button></td>' +
       '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Nhà '+esc(hs.name || hs.address)+'\',\'houses\',\''+hs.id+'\')">Xóa</button></td></tr>';
   }).join(''), 'Chưa có nhà nào');
@@ -704,14 +740,19 @@ function viewHouseForm(p){
     landlordCmndHtml(ll, 'l') +
     '</div></div>' +
     /* --- Phần 3: Hợp Đồng (với chủ nhà) --- */
+    /* Đợt 8 (mục 2+3+4a): "Thời gian thanh toán" là 1 NGÀY cụ thể (lc_paydate);
+       "Ngày thanh toán tiếp theo" + "Tổng số tiền thanh toán" là 2 ô chỉ đọc,
+       tự cập nhật ngay khi đổi Tiền thuê / Số tháng / Thời gian thanh toán
+       (hàm lcFormRefresh, tính bằng hàm chung nextPayDate). */
     '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3><div class="fgrid">' +
-    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number'), true) +
+    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number', 'oninput="lcFormRefresh()"'), true) +
     fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number'), true) +
-    fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date'), true) +
+    fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date', 'onchange="lcFormRefresh()"'), true) +
     fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date'), true) +
-    fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number'), true) +
-    fld('Thời gian thanh toán từ ngày', inp('lc_from', lc?lc.payFromDay:(lc?lc.payDay:1), 'number'), true) +
-    fld('đến ngày', inp('lc_to', lc?lc.payToDay:3, 'number')) +
+    fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number', 'oninput="lcFormRefresh()" onchange="lcFormRefresh()"'), true) +
+    fld('Thời gian thanh toán', inp('lc_paydate', lc ? (lc.payDate || '') : '', 'date', 'onchange="lcFormRefresh()"'), true) +
+    fld('Ngày thanh toán tiếp theo', inp('lc_nextpay', '', 'text', 'readonly')) +
+    fld('Tổng số tiền thanh toán (vnđ)', inp('lc_total', '', 'text', 'readonly')) +
     '</div></div>' +
     /* --- Phần 4: Mã Hóa Đơn dịch vụ --- */
     '<div class="form-sec"><h3 class="sec">Mã Hóa Đơn dịch vụ</h3><div class="fgrid">' +
@@ -738,6 +779,8 @@ function viewHouseForm(p){
   houseMapInit(hs);
   window._rbImages = (hs && Array.isArray(hs.redBookImages)) ? hs.redBookImages.slice() : [];
   rbRender();
+  /* Đợt 8: nạp sẵn 2 ô chỉ đọc của phần Hợp Đồng (Ngày TT tiếp theo + Tổng tiền TT) */
+  lcFormRefresh();
   /* Chế độ sửa: nạp sẵn các tài sản chủ nhà hiện có của nhà thành từng dòng */
   llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || ''); });
 }
@@ -789,14 +832,18 @@ function saveHouse(id){
       // Hợp đồng chủ nhà (hễ phần Hợp Đồng có nhập tiền thuê thì tạo/cập nhật)
       var rent = num(val('lc_rent'));
       if(rent){
-        var fromDay = num(val('lc_from')) || 1;
+        /* Đợt 8 (mục 2): gửi payDate (ngày cụ thể); payDay suy từ ngày trong
+           tháng của payDate; payFromDay/payToDay giữ nguyên của HĐ cũ nếu có
+           (không ghi đè dữ liệu cũ), HĐ mới để backend dùng mặc định. */
+        var payDateVal = val('lc_paydate') || null;
+        var existedLc = id ? landlordContractOf(id) : null;
         var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
           deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
-          endDate: val('lc_end') || null, payDay: fromDay,
-          payMonths: num(val('lc_paymonths')) || 1, payFromDay: fromDay,
-          payToDay: num(val('lc_to')) || 3, status: 'active' };
-        var existed = id ? landlordContractOf(id) : null;
-        jobs.push(existed ? updateRec('landlordContracts', existed.id, lcData) : createRec('landlordContracts', lcData));
+          endDate: val('lc_end') || null, payDate: payDateVal,
+          payDay: payDateVal ? Number(payDateVal.split('-')[2]) : (existedLc ? (existedLc.payDay || 5) : 5),
+          payMonths: num(val('lc_paymonths')) || 1, status: 'active' };
+        if(existedLc){ lcData.payFromDay = existedLc.payFromDay; lcData.payToDay = existedLc.payToDay; }
+        jobs.push(existedLc ? updateRec('landlordContracts', existedLc.id, lcData) : createRec('landlordContracts', lcData));
       }
       // Mã Hóa Đơn dịch vụ -> tạo 2 bản ghi house_utilities (tháng hiện tại, chưa TT)
       [['dien','hu_dien'],['nuoc','hu_nuoc']].forEach(function(pair){
@@ -1662,7 +1709,7 @@ function landlordContractsHtml(){
     var hs = byId(db.houses, lc.houseId);
     return '<tr><td>'+(i+1)+'</td><td>'+esc(lc.code||'')+'</td><td>'+esc(hs?(hs.name||hs.address):'')+'</td><td>'+esc(hs?hs.address:'')+'</td>' +
       '<td>'+esc(landlordName(lc.landlordId))+'</td><td class="price">'+fmtTrieu(lc.rentPrice)+'</td><td>'+fmtTrieu(lc.deposit)+'</td>' +
-      '<td>'+((lc.payMonths||1) > 1 ? 'Mỗi ' + lc.payMonths + ' tháng' : 'Hàng tháng')+'</td><td>Ngày '+(lc.payFromDay || lc.payDay || 1)+' đến '+(lc.payToDay || 3)+'</td><td>'+fmtDate(lc.startDate)+'</td><td>'+fmtDate(lc.endDate)+'</td>' +
+      '<td>'+((lc.payMonths||1) > 1 ? 'Mỗi ' + lc.payMonths + ' tháng' : 'Hàng tháng')+'</td><td>'+(lc.payDate ? fmtDate(lc.payDate) : 'Ngày '+(lc.payFromDay || lc.payDay || 1)+' đến '+(lc.payToDay || 3))+'</td><td>'+fmtDate(lc.startDate)+'</td><td>'+fmtDate(lc.endDate)+'</td>' +
       '<td>'+(lc.status==='liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>' : '<span class="badge b-paid">Đang hiệu lực</span>')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'landlordContractForm\',{id:\''+lc.id+'\'})">Sửa</button>' +
       (lc.status!=='liquidated' ? '<button class="linkbtn" onclick="liquidateLandlordContract(\''+lc.id+'\')">Thanh lý</button>' : '') +

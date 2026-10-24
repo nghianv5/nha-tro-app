@@ -470,6 +470,51 @@ payload lưu nhà không chứa `type`, lưu nhà có tiền thuê vẫn phát s
 `POST /api/landlord-contracts`, ô chọn nhà của Thanh toán tiền nhà liệt kê cả
 nhà từng mang type `own` lẫn `rented`).
 
+## Đợt 8 — Thanh toán tiền nhà cho chủ nhà: hạn 1,5 tháng, "Thời gian thanh toán" là ngày cụ thể, tổng tiền mỗi kỳ
+
+Theo yêu cầu của người dùng, 4 thay đổi quanh kỳ thanh toán của hợp đồng
+chủ nhà:
+
+1. **Lọc "Sắp đến hạn thanh toán" = 1,5 tháng:** ở Danh sách nhà, cửa sổ lọc
+   đổi từ 30 ngày thành **45 ngày** — nhà có "Ngày thanh toán tiếp theo" trong
+   vòng 45 ngày tới sẽ hiển thị khi tích checkbox này.
+2. **"Thời gian thanh toán" là một ngày cụ thể:** form Thêm/Sửa nhà, phần
+   Hợp Đồng bỏ 2 ô số "thanh toán từ ngày / đến ngày" (`lc_from`/`lc_to`), thay
+   bằng **một ô chọn ngày `lc_paydate`** (ngày/tháng/năm). Backend thêm cột
+   `landlord_contracts.pay_date` (DATE, nullable — qua `ensure_columns()` +
+   model/schema `payDate`); các cột cũ `payDay`/`payFromDay`/`payToDay` được
+   **giữ nguyên** (không mất dữ liệu). Khi lưu nhà, `payDay` được suy từ ngày
+   trong tháng của `payDate` (cả ở frontend lẫn enrich phía backend) để các
+   hiển thị cũ vẫn khớp; sửa nhà thì ô ngày nạp từ HĐ chủ nhà hiện tại.
+3. **"Ngày thanh toán tiếp theo"** tính bằng **một hàm chung** `nextPayDate()`
+   dùng cho form, bộ lọc và danh sách: neo = `payDate` (trống thì `startDate`),
+   bước nhảy = "Số tháng thanh toán 1 lần" (`payMonths`, tối thiểu 1); từ neo
+   cộng dồn từng bước (cộng tháng có **kẹp ngày cuối tháng**: 31/01 + 1 tháng
+   → 28/02) cho đến ngày đầu tiên ≥ hôm nay. HĐ cũ không có cả `payDate` lẫn
+   `startDate` thì fallback về logic `payDay` theo tháng như trước. Trong form
+   nhà, đây là ô **chỉ đọc** tự cập nhật ngay khi đổi Thời gian thanh toán /
+   Số tháng / Ngày bắt đầu. Ở Danh sách HĐ chủ nhà, cột "Thời gian thanh toán"
+   hiện **ngày cụ thể** nếu HĐ có `payDate`, chưa có thì giữ dạng
+   "Ngày X đến Y" cũ.
+4. **"Tổng số tiền thanh toán" = Tiền thuê × Số tháng thanh toán 1 lần:** có ở
+   cả 2 nơi — ô chỉ đọc trong form nhà (tự cập nhật khi đổi Tiền thuê/Số
+   tháng) và **cột mới trong bảng Danh sách nhà** (lấy từ HĐ chủ nhà đang
+   hiệu lực của nhà; nhà không có HĐ hiện "—").
+
+Form HĐ chủ nhà độc lập và form cọc không thay đổi ở đợt này.
+
+**Kiểm chứng:** pytest **61/61 pass** (59 cũ + 2 test mới: tạo/cập nhật/đọc
+lại `payDate` qua API, `payDay` suy từ `payDate` = 15 với `payDate`
+15/08/2026; `ensure_columns` thêm `pay_date` trên DB cũ mô phỏng);
+`node --check frontend/app.js` OK; harness jsdom **25/25 assert pass** (cố
+định hôm nay = 24/10/2026: form nhà không còn `lc_from`/`lc_to`, có ô date
+`lc_paydate`; nhập `payDate` 15/08/2026 + `payMonths` 3 → "Ngày thanh toán
+tiếp theo" hiện **15/11/2026**; Tiền thuê 5.000.000 × 3 → "Tổng số tiền thanh
+toán" hiện **15.000.000**; danh sách nhà: nhà có ngày TT tiếp theo cách 40
+ngày thì lọt lọc "Sắp đến hạn", cách 50 ngày thì bị ẩn; cột tổng tiền hiện
+đúng giá trị, nhà không HĐ hiện "—"; danh sách HĐ chủ nhà hiện ngày cụ thể
+khi có `payDate`, giữ dạng cũ khi chưa có).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.
