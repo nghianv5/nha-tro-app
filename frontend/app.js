@@ -683,7 +683,6 @@ function viewHouseForm(p){
     fld('Số phòng ngủ', inp('h_bedrooms', hs?hs.bedrooms:0, 'number'), true) +
     fld('Số nhà vệ sinh', inp('h_bathrooms', hs?hs.bathrooms:0, 'number'), true) +
     fld('Loại hình kinh doanh', sel('h_business', HOUSE_BUSINESS_TYPES, hs?hs.businessType:'Phòng trọ'), true) +
-    fld('Loại nhà', sel('h_type', [['own','Nhà của mình'],['rented','Nhà thuê']], hs?hs.type:'own')) +
     '</div>' + fld('Thêm mô tả', '<textarea id="h_desc">'+esc(desc)+'</textarea>') + '</div>' +
     /* --- Phần 2: Chủ Nhà --- */
     '<div class="form-sec"><h3 class="sec">Chủ Nhà</h3>' +
@@ -776,7 +775,7 @@ function saveHouse(id){
     var data = { address: val('h_address'), name: val('h_name'), province: val('h_province'),
       district: val('h_district'), ward: val('h_ward'), floors: num(val('h_floors')),
       floorArea: num(val('h_area')), bedrooms: num(val('h_bedrooms')), bathrooms: num(val('h_bathrooms')),
-      type: val('h_type'), businessType: val('h_business'),
+      businessType: val('h_business'),
       /* Đợt 5: "Hình thức cho thuê" đã bỏ khỏi form — giữ nguyên giá trị cũ trong DB */
       rentalMode: oldHouse ? (oldHouse.rentalMode || 'Bao phòng') : 'Bao phòng',
       description: fullDesc, landlordId: landlordId || null,
@@ -787,9 +786,9 @@ function saveHouse(id){
       redBookImages: (window._rbImages || []).slice() };
     var afterHouse = function(houseId){
       var jobs = [];
-      // Hợp đồng chủ nhà (chỉ khi nhà thuê + có tiền thuê)
+      // Hợp đồng chủ nhà (hễ phần Hợp Đồng có nhập tiền thuê thì tạo/cập nhật)
       var rent = num(val('lc_rent'));
-      if(data.type === 'rented' && rent){
+      if(rent){
         var fromDay = num(val('lc_from')) || 1;
         var lcData = { landlordId: landlordId, houseId: houseId, rentPrice: rent,
           deposit: num(val('lc_deposit')), startDate: val('lc_start') || null,
@@ -1675,7 +1674,7 @@ function landlordContractsHtml(){
       '<button class="linkbtn red" onclick="delBtn(\'Chủ nhà '+esc(l.name)+'\',\'landlords\',\''+l.id+'\',function(){viewContracts();})">Xóa</button></td></tr>';
   }).join(''), 'Chưa có chủ nhà');
   h += '<h3 class="sec">Thanh toán tiền nhà</h3><form class="filters" onsubmit="event.preventDefault();saveHousePayment()">' +
-    '<div class="fg"><label>Nhà thuê</label>'+selObj('hp_house', db.houses.filter(function(x){ return x.type==='rented'; }), '', function(x){ return (x.name||x.address); })+'</div>' +
+    '<div class="fg"><label>Nhà</label>'+selObj('hp_house', db.houses, '', function(x){ return (x.name||x.address); })+'</div>' +
     '<div class="fg"><label>Số tiền</label>'+inp('hp_amount', '', 'number')+'</div>' +
     '<div class="fg"><label>Ngày</label>'+inp('hp_date', today(), 'date')+'</div>' +
     '<button class="btn green">Ghi thanh toán</button></form>';
@@ -1688,7 +1687,7 @@ function liquidateLandlordContract(id){
   updateRec('landlordContracts', id, { status: 'liquidated' }).then(function(){ toast('Đã thanh lý hợp đồng chủ nhà'); viewContracts(); }).catch(errToast);
 }
 function saveHousePayment(){
-  var house = byId(db.houses, val('hp_house')); if(!house){ toast('Chọn nhà thuê'); return; }
+  var house = byId(db.houses, val('hp_house')); if(!house){ toast('Chọn nhà'); return; }
   var lc = landlordContractOf(house.id);
   createRec('housePayments', { houseId: house.id, landlordId: lc ? lc.landlordId : house.landlordId,
     amount: num(val('hp_amount')) || (lc ? lc.rentPrice : 0), date: val('hp_date') || today(), status: 'paid' })

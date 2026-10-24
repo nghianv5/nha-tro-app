@@ -447,6 +447,29 @@ nhập tay).
 quả tìm địa chỉ phụ thuộc dữ liệu OpenStreetMap (khu vực ít dữ liệu có thể không tìm
 thấy — khi đó bấm trực tiếp lên bản đồ hoặc nhập tọa độ tay).
 
+## Đợt sửa — Bỏ trường "Loại nhà" (Nhà của mình / Nhà thuê) khỏi form nhà
+
+Theo quyết định của người dùng, trường "Loại nhà" (đợt 5 từng giữ lại chờ quyết
+định) nay **bỏ hẳn khỏi form Thêm/Sửa nhà**:
+
+1. Form nhà không còn ô "Loại nhà"; khi lưu nhà, frontend **không gửi trường
+   `type`** nữa.
+2. **Hợp đồng chủ nhà vẫn được tạo/cập nhật như trước:** điều kiện cũ "chỉ khi
+   nhà là Nhà thuê" được thay bằng "hễ phần Hợp Đồng của form có nhập **Tiền
+   thuê** thì tạo/cập nhật hợp đồng chủ nhà" — mọi nhà đều đi theo luồng này.
+3. Form **Thanh toán tiền nhà** (mục Hợp đồng chủ nhà): ô chọn nhà nay liệt kê
+   **tất cả các nhà** (không còn lọc nhà thuê), nhãn rút gọn thành "Nhà".
+4. Cột DB `houses.type` và dữ liệu cũ được **giữ nguyên** (backend vẫn chấp
+   nhận trường `type` nếu client cũ gửi lên); chỉ frontend ngừng sử dụng.
+   Các nhãn "Đã thuê / Đang thuê" của **trạng thái phòng** không liên quan và
+   không thay đổi.
+
+**Kiểm chứng:** pytest **59/59 pass**; `node --check frontend/app.js` OK; harness
+jsdom **12/12 assert pass** (form Thêm/Sửa nhà không còn phần tử `#h_type`,
+payload lưu nhà không chứa `type`, lưu nhà có tiền thuê vẫn phát sinh
+`POST /api/landlord-contracts`, ô chọn nhà của Thanh toán tiền nhà liệt kê cả
+nhà từng mang type `own` lẫn `rented`).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.
