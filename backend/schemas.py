@@ -76,6 +76,7 @@ class RoomCreate(BaseModel):
     payToDay: Optional[int] = 3
     amenities: Optional[List[str]] = []
     services: Optional[dict] = {}
+    images: Optional[List[str]] = []
 
 
 class RoomUpdate(BaseModel):
@@ -96,6 +97,7 @@ class RoomUpdate(BaseModel):
     payToDay: Optional[int] = None
     amenities: Optional[List[str]] = None
     services: Optional[dict] = None
+    images: Optional[List[str]] = None
 
 
 class RoomOut(OutBase, RoomCreate):

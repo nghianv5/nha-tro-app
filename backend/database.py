@@ -60,6 +60,7 @@ NEW_COLUMNS = {
     "rooms": {
         "kitchen": "VARCHAR DEFAULT 'Không có'",
         "sub_rooms": "INTEGER DEFAULT 0",  # SPEC-WEB-2 B
+        "images": "JSON DEFAULT '[]'",  # Đợt 16 — ảnh phòng (DB cũ được ADD COLUMN khi khởi động)
     },
     "customers": {  # SPEC-WEB-2 C — hồ sơ khách đầy đủ
         "job": "VARCHAR DEFAULT ''",

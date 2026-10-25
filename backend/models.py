@@ -64,6 +64,7 @@ class Room(TimestampMixin, Base):
     payToDay = Column("pay_to_day", Integer, default=3)
     amenities = Column(JSON, default=list)
     services = Column(JSON, default=dict)  # {dien, dienChung, internet, extra:[...]}
+    images = Column(JSON, default=list)  # Đợt 16 — danh sách URL ảnh phòng tải lên (như ảnh sổ đỏ của nhà)
 
 
 class Customer(TimestampMixin, Base):

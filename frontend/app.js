@@ -1420,6 +1420,57 @@ function addRoomSvFromCatalog(){
   window._rsvRows.push({ key: key, name: name, hasUnit: true, price: price, unit: unit, editing: false });
   renderRoomSvRows();
 }
+/* ----- Đợt 16: Ảnh phòng (nhiều ảnh, tải lên thật như ảnh sổ đỏ của nhà) ----- */
+function rmRender(){
+  var grid = document.getElementById('rm_grid'); if(!grid) return;
+  var list = window._rmImages || [];
+  grid.innerHTML = list.length ? list.map(function(u, i){
+    return '<div class="rb-cell"><a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh phòng"></a>' +
+      '<button type="button" class="rb-x" title="Xóa ảnh này" onclick="rmRemove('+i+')">✕</button></div>';
+  }).join('') : '<div class="img-ph" style="padding:10px 6px;flex:1">🖼️<br>Chưa có ảnh phòng</div>';
+}
+function rmPickFiles(){
+  var input = document.getElementById('rm_file');
+  var files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+  if(input) input.value = '';
+  if(!files.length) return;
+  window._rmImages = window._rmImages || [];
+  toast('Đang tải ' + files.length + ' ảnh phòng lên...');
+  var chain = Promise.resolve();
+  files.forEach(function(f){
+    chain = chain.then(function(){ return uploadImageFile(f); }).then(function(url){
+      window._rmImages.push(url); rmRender();
+    });
+  });
+  chain.then(function(){ toast('Đã tải ảnh phòng lên'); }).catch(function(e){ errToast(e); rmRender(); });
+}
+function rmRemove(i){ (window._rmImages || []).splice(i, 1); rmRender(); }
+/* ----- Đợt 16: Tài sản trong phòng — cùng mẫu với Tài sản của nhà ----- */
+function addRoomAssetRow(type, status, note, assetId, imageUrl){
+  var i = window._raCount = (window._raCount || 0) + 1;
+  var wrap = document.getElementById('ra_rows'); if(!wrap) return;
+  var types = HOUSE_ASSET_TYPES.slice();
+  if(type && types.indexOf(type) < 0) types.unshift(type);
+  var existed = assetId ? byId(db.assets, assetId) : null;
+  var div = document.createElement('div');
+  div.className = 'fgrid'; div.id = 'ra_row_' + i;
+  if(assetId) div.setAttribute('data-aid', assetId);
+  div.innerHTML = (existed ? '<div><label class="fl">Mã tài sản</label><div style="padding:9px 2px;font-weight:600">'+esc(existed.code || '')+'</div></div>' : '') +
+    '<div>'+fld('Loại tài sản', sel('ra_type_'+i, types, type||'Tivi'))+'</div>' +
+    '<div>'+fld('Trạng thái', sel('ra_status_'+i, ASSET_STATUSES, status||'Tốt'))+'</div>' +
+    imagePickerHtml('ra_img_'+i, imageUrl || (existed ? (existed.imageUrl || '') : ''), 'Ảnh tài sản') +
+    '<div>'+fld('Note', inp('ra_note_'+i, note||''))+'</div>' +
+    '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm red" onclick="raRemoveRow('+i+')">Xóa dòng</button></div>';
+  wrap.appendChild(div);
+}
+function raRemoveRow(i){
+  var row = document.getElementById('ra_row_' + i); if(!row) return;
+  var aid = row.getAttribute('data-aid');
+  /* Tài sản đã lưu: ghi nhớ để xóa thật khi bấm Lưu phòng. Dòng mới thêm
+     trong form thì chỉ cần gỡ khỏi form. */
+  if(aid){ window._raRemoved = window._raRemoved || []; if(window._raRemoved.indexOf(aid) < 0) window._raRemoved.push(aid); }
+  row.remove();
+}
 function viewRoomForm(p){
   var r = p.id ? byId(db.rooms, p.id) : null;
   var sv = r ? (r.services || {}) : {};
@@ -1454,17 +1505,24 @@ function viewRoomForm(p){
       return chk('r_am_'+a, a, r && (r.amenities||[]).indexOf(a)>=0);
     }).join('') + '</div>' +
     '<div class="fgrid"><div>' + fld('Bếp', sel('r_kitchen', ['Không có','Trong phòng','Bên ngoài','Chung'], r?r.kitchen:'Không có')) + '</div></div>';
-  if(r){
-    var assets = db.assets.filter(function(a){ return a.roomId === r.id; });
-    h += '<h3 class="sec">Tài sản trong phòng</h3>' + tableHtml(['Mã TS','Loại','Trạng thái'], assets.map(function(a){
-      return '<tr><td>'+esc(a.code)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td></tr>';
-    }).join(''), 'Phòng chưa có tài sản') ;
-  }
+  /* Đợt 16: Ảnh phòng + Tài sản trong phòng (cùng mẫu với form nhà) */
+  h += '<div class="form-sec"><h3 class="sec">Ảnh phòng</h3>' +
+    '<div id="rm_grid" class="rb-grid"></div>' +
+    '<input type="file" id="rm_file" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none" onchange="rmPickFiles()">' +
+    '<div class="btnrow" style="margin:6px 0 0"><button type="button" class="btn sm gray" onclick="document.getElementById(\'rm_file\').click()">📷 Thêm ảnh phòng</button></div></div>' +
+    '<div class="form-sec"><h3 class="sec">Tài sản trong phòng</h3><div id="ra_rows"></div>' +
+    '<div class="btnrow"><button type="button" class="btn sm" onclick="addRoomAssetRow()">+ Thêm tài sản</button></div></div>';
   h += '<div class="btnrow"><button class="btn green" type="submit">'+(r ? 'Lưu thay đổi' : 'Thêm phòng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'rooms\')">Quay lại</button></div></form>';
   setContent(h);
   window._rsvRows = roomSvState(sv, !r);
   renderRoomSvRows();
+  window._raCount = 0; window._raRemoved = [];
+  window._rmImages = (r && Array.isArray(r.images)) ? r.images.slice() : [];
+  rmRender();
+  (r ? db.assets.filter(function(a){ return a.roomId === r.id; }) : []).forEach(function(a){
+    addRoomAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || '');
+  });
 }
 function saveRoom(id){
   var old = id ? byId(db.rooms, id) : null;
@@ -1486,9 +1544,32 @@ function saveRoom(id){
     withOwner: isChk('r_withOwner'), price: numTrieu(val('r_price')), minDeposit: num(val('r_minDep')),
     maxPeople: num(val('r_max')), subRooms: num(val('r_subrooms')), payMonths: num(val('r_payMonths'))||1,
     payFromDay: num(val('r_from'))||1, payToDay: num(val('r_to'))||3, amenities: amenities,
-    services: services };
+    services: services,
+    /* Đợt 16: danh sách URL ảnh phòng đã tải lên */
+    images: (window._rmImages || []).slice() };
+  /* Đọc các dòng tài sản trong form: dòng có data-aid là tài sản sẵn có
+     (cập nhật), dòng không có là tài sản thêm mới (tạo mới). */
+  var assetRows = [];
+  document.querySelectorAll('#ra_rows > div').forEach(function(row){
+    var m = (row.id || '').match(/^ra_row_(\d+)$/); if(!m) return;
+    var i = m[1], tEl = document.getElementById('ra_type_' + i);
+    if(tEl && tEl.value.trim())
+      assetRows.push({ aid: row.getAttribute('data-aid') || '', type: tEl.value.trim(),
+        status: val('ra_status_' + i) || 'Tốt', note: val('ra_note_' + i),
+        imageUrl: val('ra_img_' + i) });
+  });
   var pr = id ? updateRec('rooms', id, data) : createRec('rooms', data);
-  pr.then(function(){ toast('Đã lưu phòng'); go('rooms'); }).catch(errToast);
+  pr.then(function(savedRoom){
+    var roomId = (savedRoom && savedRoom.id) || id;
+    var jobs = [];
+    assetRows.forEach(function(rr){
+      if(rr.aid) jobs.push(updateRec('assets', rr.aid, { type: rr.type, status: rr.status, note: rr.note, imageUrl: rr.imageUrl }));
+      else jobs.push(createRec('assets', { houseId: data.houseId, roomId: roomId, ownerType: 'room',
+        type: rr.type, status: rr.status, note: rr.note, imageUrl: rr.imageUrl }));
+    });
+    (window._raRemoved || []).forEach(function(aid){ jobs.push(deleteRecDirect('assets', aid)); });
+    return Promise.all(jobs);
+  }).then(function(){ toast('Đã lưu phòng'); go('rooms'); }).catch(errToast);
 }
 function viewRoomDetail(p){
   var r = byId(db.rooms, p.id); if(!r){ toast('Không tìm thấy phòng'); go('rooms'); return; }
@@ -1511,8 +1592,14 @@ function viewRoomDetail(p){
     '<button class="btn" onclick="quickMonthly(\''+r.id+'\')">Tạo hóa đơn tháng này</button>' +
     '<button class="btn gray" onclick="go(\'roomForm\',{id:\''+r.id+'\'})">Sửa phòng</button>' +
     '<button class="btn gray" onclick="go(\'rooms\')">Quay lại</button></div>';
-  h += '<h3 class="sec">Tài sản của phòng</h3>' + tableHtml(['Mã TS','Loại','Trạng thái'], assets.map(function(a){
-    return '<tr><td>'+esc(a.code)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td></tr>'; }).join(''), 'Chưa có tài sản');
+  /* Đợt 16: ảnh phòng + ảnh từng tài sản ở chi tiết phòng */
+  if(r.images && r.images.length)
+    h += '<h3 class="sec">Ảnh phòng</h3><div class="rb-grid">' + r.images.map(function(u){
+      return '<div class="rb-cell"><a href="'+esc(u)+'" target="_blank" rel="noopener"><img class="rb-thumb" src="'+esc(u)+'" alt="Ảnh phòng"></a></div>';
+    }).join('') + '</div>';
+  h += '<h3 class="sec">Tài sản của phòng</h3>' + tableHtml(['Mã TS','Loại','Trạng thái','Ảnh'], assets.map(function(a){
+    return '<tr><td>'+esc(a.code)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.status)+'</td>' +
+      '<td>'+(a.imageUrl ? '<a href="'+esc(a.imageUrl)+'" target="_blank" rel="noopener"><img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản"></a>' : '')+'</td></tr>'; }).join(''), 'Chưa có tài sản');
   h += '<h3 class="sec">Chốt số điện / nước</h3><div class="card">' +
     '<div class="fgrid">' + fld('Loại', sel('mr_type', [['dien','Điện'],['nuoc','Nước']], 'dien')) +
     fld('Chỉ số mới', inp('mr_curr', '', 'number')) + fld('Ngày chốt', inp('mr_date', today(), 'date')) + '</div>' +
