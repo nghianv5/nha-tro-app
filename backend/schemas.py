@@ -418,7 +418,7 @@ class AssetCreate(BaseModel):
     houseId: str
     roomId: Optional[str] = None
     code: Optional[str] = ""
-    ownerType: Optional[str] = "room"
+    owner: Optional[str] = "room"  # Đợt 19: đổi tên từ ownerType cho khớp 'Chủ sở hữu'
     type: str = ""
     status: Optional[str] = "Tốt"
     note: Optional[str] = ""
@@ -429,7 +429,7 @@ class AssetUpdate(BaseModel):
     houseId: Optional[str] = None
     roomId: Optional[str] = None
     code: Optional[str] = None
-    ownerType: Optional[str] = None
+    owner: Optional[str] = None
     type: Optional[str] = None
     status: Optional[str] = None
     note: Optional[str] = None

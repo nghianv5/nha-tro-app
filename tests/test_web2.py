@@ -248,16 +248,16 @@ def test_landlord_contract_pay_fields(client):
     assert lc["payDay"] == 2  # enrich đồng bộ payDay = payFromDay
 
 
-# ---------- A: Mã tài sản tự sinh 8 số + ownerType/note ----------
+# ---------- A: Mã tài sản tự sinh 8 số + owner/note ----------
 def test_asset_code_autogen_and_owner_fields(client):
     house = make_house(client, "29 Đường Tài Sản")
     r = client.post("/api/assets", json={
-        "houseId": house["id"], "roomId": None, "ownerType": "landlord",
+        "houseId": house["id"], "roomId": None, "owner": "landlord",
         "type": "Tủ lạnh", "status": "Như mới", "note": "Tài sản của chủ nhà"})
     assert r.status_code == 201, r.text
     a1 = r.json()
     assert re.fullmatch(r"\d{8}", a1["code"]), a1["code"]
-    assert a1["ownerType"] == "landlord" and a1["note"] == "Tài sản của chủ nhà"
+    assert a1["owner"] == "landlord" and a1["note"] == "Tài sản của chủ nhà"
     r = client.post("/api/assets", json={
         "houseId": house["id"], "type": "Máy giặt", "status": "Tốt"})
     a2 = r.json()
@@ -305,7 +305,7 @@ def test_ensure_columns_web2_on_legacy_db():
     assert "sub_rooms" in cols("rooms")
     assert {"job", "marital_status", "permanent_address", "current_address", "note"} <= cols("customers")
     assert {"customer_id", "pay_months", "pay_day_from", "pay_day_to", "service_config"} <= cols("deposits")
-    assert {"owner_type", "note"} <= cols("assets")
+    assert {"owner", "note"} <= cols("assets")
     assert {"sent", "sent_date"} <= cols("invoices")
     assert {"pay_months", "pay_from_day", "pay_to_day"} <= cols("landlord_contracts")
     eng.dispose()

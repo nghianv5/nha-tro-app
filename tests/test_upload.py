@@ -63,7 +63,7 @@ def test_upload_gif_ok(client):
 def test_asset_image_url_roundtrip(client):
     house = make_house(client, "9 Đường Ảnh Tài Sản")
     r = client.post("/api/assets", json={
-        "houseId": house["id"], "roomId": None, "ownerType": "landlord",
+        "houseId": house["id"], "roomId": None, "owner": "landlord",
         "type": "Điều hòa", "status": "Tốt", "note": "",
         "imageUrl": "/uploads/abc123.png"})
     assert r.status_code == 201, r.text

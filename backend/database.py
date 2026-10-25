@@ -70,7 +70,8 @@ NEW_COLUMNS = {
         "note": "TEXT DEFAULT ''",
     },
     "assets": {  # SPEC-WEB-2 A — tài sản chủ nhà + ghi chú
-        "owner_type": "VARCHAR DEFAULT 'room'",
+        # Đợt 19: cột owner (đổi tên từ owner_type cho khớp 'Chủ sở hữu')
+        "owner": "VARCHAR DEFAULT 'room'",
         "note": "TEXT DEFAULT ''",
         "image_url": "VARCHAR DEFAULT ''",  # Đợt 6 — ảnh tài sản tải lên
     },
@@ -153,6 +154,21 @@ def ensure_columns(eng=None):
     from sqlalchemy import inspect, text
 
     eng = eng or engine
+    # Đợt 19 — đổi tên cột tài sản cho khớp 'Chủ sở hữu', GIỮ DỮ LIỆU, chạy
+    # trong giao dịch RIÊNG và commit trước vòng ADD COLUMN, để vòng sau
+    # nhìn thấy cột owner mới và không thử tạo trùng cột (tạo trùng sẽ
+    # lỗi và lăn lại cả việc đổi tên). DB cũ có owner_type nhưng chưa có
+    # owner -> RENAME (PostgreSQL + SQLite đều hỗ trợ). Đã có cả 2 cột
+    # thì không động vào để tránh ghi đè dữ liệu.
+    try:
+        _insp = inspect(eng)
+        if "assets" in _insp.get_table_names():
+            _acols = {c["name"] for c in _insp.get_columns("assets")}
+            if "owner_type" in _acols and "owner" not in _acols:
+                with eng.begin() as _conn:
+                    _conn.execute(text('ALTER TABLE "assets" RENAME COLUMN "owner_type" TO "owner"'))
+    except Exception as exc:  # pragma: no cover - phòng vệ lúc khởi động
+        print("[ensure_columns] Bỏ qua lỗi đổi tên cột assets:", exc)
     try:
         inspector = inspect(eng)
         existing_tables = set(inspector.get_table_names())

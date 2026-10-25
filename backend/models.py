@@ -218,7 +218,9 @@ class Asset(TimestampMixin, Base):
     houseId = Column("house_id", String, ForeignKey("houses.id"), nullable=False, index=True)
     roomId = Column("room_id", String, ForeignKey("rooms.id"), nullable=True, index=True)
     code = Column(String, default="")  # Mã tài sản 8 số tự sinh (00000001...)
-    ownerType = Column("owner_type", String, default="room")  # room (trong phòng) | landlord (tài sản chủ nhà) — SPEC-WEB-2 A
+    # Đợt 19: đổi tên trường cho khớp tên hiển thị 'Chủ sở hữu':
+    # room = Chủ đầu tư/Quản lý (tài sản trong phòng cũ) | landlord = Chủ nhà
+    owner = Column("owner", String, default="room")
     type = Column(String, default="")
     status = Column(String, default="Tốt")  # Mới|Như mới|Tốt|Cũ|Hỏng|Mất
     note = Column(Text, default="")

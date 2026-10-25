@@ -192,7 +192,7 @@ nha-tro-app/
   có "Số tháng thanh toán 1 lần" + "Thời gian thanh toán từ–đến ngày" và mục
   **Mã Hóa Đơn dịch vụ**: lưu nhà kèm mã điện/mã nước sẽ tự tạo 2 bản ghi
   `house_utilities` của tháng hiện tại (chưa thanh toán, số tiền 0). Tab Tài sản
-  chủ nhà cho thêm dòng tài sản (`assets.ownerType = 'landlord'`, mã tự sinh
+  chủ nhà cho thêm dòng tài sản (`assets.owner = 'landlord'`, mã tự sinh
   8 số, có ghi chú). DS Nhà thêm cột **Số phòng / Số phòng trống** (đã bỏ ở
   đợt 3 — xem mục dưới).
 - **Phòng**: thêm **Số phòng con** (`rooms.subRooms`); 14 ô tiện ích đúng thiết

@@ -691,7 +691,7 @@ function viewHouseDetail(p){
   if(desc.indexOf('Vị trí bản đồ: ') === 0){ var parts = desc.split('\n'); mapNote = parts[0].slice('Vị trí bản đồ: '.length); desc = parts.slice(1).join('\n'); }
   var huDien = null, huNuoc = null;
   db.houseUtilities.forEach(function(u){ if(u.houseId === hs.id){ if(u.type==='dien' && !huDien) huDien = u; if(u.type==='nuoc' && !huNuoc) huNuoc = u; } });
-  var llAssets = db.assets.filter(function(a){ return a.houseId === hs.id && a.ownerType === 'landlord'; });
+  var llAssets = db.assets.filter(function(a){ return a.houseId === hs.id && a.owner === 'landlord'; });
   var rooms = db.rooms.filter(function(r){ return r.houseId === hs.id; });
   var cnt = { empty:0, deposited:0, rented:0 };
   rooms.forEach(function(r){ cnt[roomStatus(r)]++; });
@@ -859,7 +859,7 @@ function viewHouseForm(p){
   if(desc.indexOf('Vị trí bản đồ: ') === 0){ var parts = desc.split('\n'); mapNote = parts[0].slice('Vị trí bản đồ: '.length); desc = parts.slice(1).join('\n'); }
   var huDien = null, huNuoc = null;
   if(hs) db.houseUtilities.forEach(function(u){ if(u.houseId === hs.id){ if(u.type==='dien' && !huDien) huDien = u; if(u.type==='nuoc' && !huNuoc) huNuoc = u; } });
-  var llAssets = hs ? db.assets.filter(function(a){ return a.houseId === hs.id && a.ownerType === 'landlord'; }) : [];
+  var llAssets = hs ? db.assets.filter(function(a){ return a.houseId === hs.id && a.owner === 'landlord'; }) : [];
   var h = pageTitle(hs ? 'Sửa nhà' : 'Thêm nhà');
   /* Đợt 5: form nhà là 1 TRANG CUỘN với 5 phần hiện cùng lúc (không còn tab) */
   h += '<form class="form-card" onsubmit="event.preventDefault();saveHouse(\''+(hs?hs.id:'')+'\')">' +
@@ -1042,7 +1042,7 @@ function saveHouse(id){
       // Tài sản chủ nhà trong form: dòng sẵn có -> cập nhật, dòng mới -> tạo
       assetRows.forEach(function(r){
         if(r.aid) jobs.push(updateRec('assets', r.aid, { type: r.type, status: r.status, note: r.note, imageUrl: r.imageUrl }));
-        else jobs.push(createRec('assets', { houseId: houseId, roomId: null, ownerType: 'landlord',
+        else jobs.push(createRec('assets', { houseId: houseId, roomId: null, owner: 'landlord',
           type: r.type, status: r.status, note: r.note, imageUrl: r.imageUrl }));
       });
       Promise.all(jobs).then(function(){
@@ -1568,7 +1568,7 @@ function saveRoom(id){
     var jobs = [];
     assetRows.forEach(function(rr){
       if(rr.aid) jobs.push(updateRec('assets', rr.aid, { type: rr.type, status: rr.status, note: rr.note, imageUrl: rr.imageUrl }));
-      else jobs.push(createRec('assets', { houseId: data.houseId, roomId: roomId, ownerType: 'room',
+      else jobs.push(createRec('assets', { houseId: data.houseId, roomId: roomId, owner: 'room',
         type: rr.type, status: rr.status, note: rr.note, imageUrl: rr.imageUrl }));
     });
     (window._raRemoved || []).forEach(function(aid){ jobs.push(deleteRecDirect('assets', aid)); });
@@ -3192,7 +3192,10 @@ function viewAssetForm(p){
   var h = pageTitle(a ? 'Cập nhật tài sản' : 'Thêm tài sản');
   h += '<form class="form-card" onsubmit="event.preventDefault();saveAsset(\''+(a?a.id:'')+'\')"><div class="fgrid">' +
     fld('Nhà', selObj('a_house', db.houses, a?a.houseId:'', function(x){ return (x.name||x.address); }), true) +
-    fld('Đối tượng', sel('a_owner', [['room','Tài sản trong phòng'],['landlord','Tài sản chủ nhà']], a?a.ownerType:'room')) +
+    /* Đợt 18: đổi tên hiển thị 'Đối tượng' -> 'Chủ sở hữu', giữ nguyên giá trị
+       room/landlord nên dữ liệu cũ và nơi hiển thị (nhà/phòng) không đổi:
+       Chủ đầu tư/Quản lý = tài sản trong phòng cũ, Chủ nhà = tài sản chủ nhà cũ. */
+    fld('Chủ sở hữu', sel('a_owner', [['room','Chủ đầu tư/Quản lý'],['landlord','Chủ nhà']], a?a.owner:'room')) +
     fld('Phòng', selObj('a_room', db.rooms, a?a.roomId:'', function(x){ return x.name + ' (' + houseName(x.houseId) + ')'; }, '-- Cả nhà --')) +
     fld('Mã tài sản (để trống = tự sinh)', inp('a_code', a?a.code:'')) + fld('Loại tài sản', inp('a_type', a?a.type:''), true) +
     fld('Trạng thái', sel('a_status', ASSET_STATUSES, a?a.status:'Tốt')) +
@@ -3206,7 +3209,7 @@ function viewAssetForm(p){
 function saveAsset(id){
   var room = byId(db.rooms, val('a_room'));
   var data = { houseId: room ? room.houseId : val('a_house'), roomId: val('a_room') || null,
-    code: val('a_code'), ownerType: val('a_owner'), type: val('a_type'), status: val('a_status'),
+    code: val('a_code'), owner: val('a_owner'), type: val('a_type'), status: val('a_status'),
     note: val('a_note'), imageUrl: val('a_img') };
   var pr = id ? updateRec('assets', id, data) : createRec('assets', data);
   pr.then(function(){ toast('Đã lưu tài sản'); go('assets'); }).catch(errToast);
