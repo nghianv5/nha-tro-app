@@ -442,10 +442,14 @@ var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', house
   rooms:'rooms', roomForm:'rooms', roomDetail:'rooms', deposits:'deposits', depositForm:'deposits',
   contracts:'contracts', contractForm:'contracts', contractDetail:'contracts', liquidate:'contracts', landlordContractForm:'contracts', landlordForm:'contracts',
   invoices:'invoices', invoiceDetail:'invoices', monthlyForm:'invoices', otherForm:'invoices', specialInvoices:'invoices', specialSend:'invoices', invoiceEdit:'invoices', invoicePrint:'invoices', paymentsAll:'invoices',
-  finance:'finance', receiptForm:'finance', expenseForm:'finance', services:'services', serviceForm:'services',
+  finance:'finance', receiptForm:'finance', expenseForm:'finance',
   staff:'staff', staffForm:'staff', notifications:'notifications',
-  vehicles:'manage', vehicleForm:'manage', assets:'manage', assetForm:'manage', incidents:'manage', incidentForm:'manage',
-  customers:'manage', customerForm:'manage', units:'manage', settings:'manage' };
+  incidents:'incidents', incidentForm:'incidents',
+  customers:'customers', customerForm:'customers',
+  /* Đợt 17: Dịch vụ nằm trong dropdown Quản lý nên sáng mục Quản lý;
+     Sự cố/Khách thuê đã ra menu chính nên sáng riêng từng mục. */
+  vehicles:'manage', vehicleForm:'manage', assets:'manage', assetForm:'manage', services:'manage', serviceForm:'manage',
+  units:'manage', settings:'manage' };
 var curView = 'dashboard', curParams = {};
 function toggleMenu(ev){ ev.stopPropagation(); document.getElementById('manageMenu').classList.toggle('open'); }
 document.addEventListener('click', function(){ var m=document.getElementById('manageMenu'); if(m) m.classList.remove('open'); });
