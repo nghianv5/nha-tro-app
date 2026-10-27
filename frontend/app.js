@@ -62,6 +62,22 @@ function deleteRecDirect(coll, id){
   });
 }
 function errToast(e){ toast('Lỗi: ' + (e.message || e)); }
+/* ----- Chống bấm Lưu liên tục (đợt 25): khóa nút Lưu trong lúc request lưu
+   đang chạy, mở lại khi xong/lỗi. Khóa theo từng form (key) nên bấm đúp chỉ
+   tạo 1 request; lớp chặn trùng ở backend vẫn là quyết định cuối cùng
+   (kể cả khi request vẫn lọt qua, vd gọi API trực tiếp). unlockSave gọi
+   nhiều lần cũng an toàn (xóa cờ + mở nút, không làm gì thêm). */
+var saveLocks = {};
+function lockSave(key){
+  if(saveLocks[key]) return false;
+  saveLocks[key] = true;
+  document.querySelectorAll('form button[type=submit]').forEach(function(b){ b.disabled = true; });
+  return true;
+}
+function unlockSave(key){
+  delete saveLocks[key];
+  document.querySelectorAll('form button[type=submit]').forEach(function(b){ b.disabled = false; });
+}
 
 /* ---------- Tiện ích ---------- */
 function fmt(n){ n = Math.round(Number(n)||0); return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.') + 'đ'; }
@@ -1056,6 +1072,7 @@ function viewHouseForm(p){
   llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || ''); });
 }
 function saveHouse(id){
+  if(!lockSave('house')) return;  // Đợt 25: bấm Thêm nhà liên tục chỉ chạy 1 lần lưu
   var landlordSel = val('h_landlordSel');
   /* "Quản lý thay chủ": phần Hợp Đồng bị ẩn/vô hiệu hóa thì không tạo/
      cập nhật hợp đồng chủ nhà (hợp đồng đã có vẫn giữ nguyên) */
@@ -1143,14 +1160,15 @@ function saveHouse(id){
       Promise.all(jobs).then(function(){
         toast('Đã lưu nhà' + (jobs.length ? ' + hợp đồng/tài khoản điện nước/tài sản kèm theo' : ''));
         go('houses');
-      }).catch(errToast);
+        unlockSave('house');
+      }).catch(function(e){ errToast(e); unlockSave('house'); });
     };
-    if(id) updateRec('houses', id, data).then(function(){ afterHouse(id); }).catch(errToast);
-    else createRec('houses', data).then(function(hs){ afterHouse(hs.id); }).catch(errToast);
+    if(id) updateRec('houses', id, data).then(function(){ afterHouse(id); }).catch(function(e){ errToast(e); unlockSave('house'); });
+    else createRec('houses', data).then(function(hs){ afterHouse(hs.id); }).catch(function(e){ errToast(e); unlockSave('house'); });
   };
   if(landlordSel && landlordData)
-    updateRec('landlords', landlordSel, landlordData).then(function(){ proceed(landlordSel); }).catch(errToast);
-  else if(landlordData) createRec('landlords', landlordData).then(function(l){ proceed(l.id); }).catch(errToast);
+    updateRec('landlords', landlordSel, landlordData).then(function(){ proceed(landlordSel); }).catch(function(e){ errToast(e); unlockSave('house'); });
+  else if(landlordData) createRec('landlords', landlordData).then(function(l){ proceed(l.id); }).catch(function(e){ errToast(e); unlockSave('house'); });
   else proceed(landlordSel || null);
 }
 
@@ -1629,6 +1647,7 @@ function viewRoomForm(p){
   });
 }
 function saveRoom(id){
+  if(!lockSave('room')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var old = id ? byId(db.rooms, id) : null;
   var amenities = AMENITIES.filter(function(a){ return isChk('r_am_'+a); });
   // Giữ lại tiện ích ngoài danh sách 14 của thiết kế (vd 'Tivi' từ dữ liệu cũ)
@@ -1673,7 +1692,7 @@ function saveRoom(id){
     });
     (window._raRemoved || []).forEach(function(aid){ jobs.push(deleteRecDirect('assets', aid)); });
     return Promise.all(jobs);
-  }).then(function(){ toast('Đã lưu phòng'); go('rooms'); }).catch(errToast);
+  }).then(function(){ toast('Đã lưu phòng'); go('rooms'); unlockSave('room'); }).catch(function(e){ errToast(e); unlockSave('room'); });
 }
 function viewRoomDetail(p){
   var r = byId(db.rooms, p.id); if(!r){ toast('Không tìm thấy phòng'); go('rooms'); return; }
@@ -2006,6 +2025,7 @@ function saveContract(id){
   var cur = id ? byId(db.contracts, id) : null;
   var other = activeContract(room.id);
   if(other && (!cur || other.id !== cur.id)){ toast('Phòng đã có hợp đồng đang hiệu lực'); return; }
+  if(!lockSave('contract')) return;  // Đợt 25: khóa sau bước kiểm tra, mở lại ở cuối chuỗi lưu
   var custSel = val('c_custSel');
   var custData = collectCust('cu');
   var custPromise = custSel ? updateRec('customers', custSel, custData) : createRec('customers', custData);
@@ -2025,7 +2045,7 @@ function saveContract(id){
     var pr = cur ? updateRec('contracts', cur.id, data)
       : createRec('contracts', Object.assign({ status: 'active' }, data));
     return pr;
-  }).then(function(){ toast(cur ? 'Đã lưu hợp đồng' : 'Đã tạo hợp đồng — phòng đã chuyển sang Đã thuê'); go('contracts'); }).catch(errToast);
+  }).then(function(){ toast(cur ? 'Đã lưu hợp đồng' : 'Đã tạo hợp đồng — phòng đã chuyển sang Đã thuê'); go('contracts'); unlockSave('contract'); }).catch(function(e){ errToast(e); unlockSave('contract'); });
 }
 function viewContractDetail(p){
   var c = byId(db.contracts, p.id); if(!c){ toast('Không tìm thấy hợp đồng'); go('contracts'); return; }
@@ -2147,8 +2167,9 @@ function saveLandlordContract(id){
     rentPrice: num(val('lc_rent')), deposit: num(val('lc_deposit')),
     startDate: val('lc_start') || null, endDate: val('lc_end') || null,
     payDay: num(val('lc_payday')) || 5, status: val('lc_status') };
+  if(!lockSave('landlordContract')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var pr = id ? updateRec('landlordContracts', id, data) : createRec('landlordContracts', data);
-  pr.then(function(){ toast('Đã lưu hợp đồng chủ nhà'); contractState.sub='landlord'; go('contracts'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu hợp đồng chủ nhà'); contractState.sub='landlord'; go('contracts'); unlockSave('landlordContract'); }).catch(function(e){ errToast(e); unlockSave('landlordContract'); });
 }
 /* ----- Màn Quản lý chủ nhà (dropdown Quản lý): danh sách riêng, trước đây
    chỉ xem được bảng chủ nhà lồng trong màn Hợp đồng ----- */
@@ -2194,13 +2215,14 @@ function viewLandlordForm(p){
   setContent(h);
 }
 function saveLandlord(id){
+  if(!lockSave('landlord')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var data = { name: val('ll_name'), phone: val('ll_phone'), address: val('ll_addr'),
     dob: val('ll_dob') || null, gender: val('ll_gender'), job: val('ll_job'),
     maritalStatus: val('ll_marital'), email: val('ll_email'), idCard: val('ll_idcard'),
     permanentAddress: val('ll_perm'),
     idCardImage1: val('ll_cmnd_front'), idCardImage2: val('ll_cmnd_back') };
   var pr = id ? updateRec('landlords', id, data) : createRec('landlords', data);
-  pr.then(function(){ toast('Đã lưu chủ nhà'); backFromLandlordForm(); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu chủ nhà'); backFromLandlordForm(); unlockSave('landlord'); }).catch(function(e){ errToast(e); unlockSave('landlord'); });
 }
 VIEWS.contracts = viewContracts; VIEWS.contractForm = viewContractForm;
 VIEWS.contractDetail = viewContractDetail; VIEWS.liquidate = viewLiquidate;
@@ -3011,9 +3033,10 @@ function viewServiceForm(p){
   setContent(h);
 }
 function saveService(id){
+  if(!lockSave('service')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var data = { name: val('sv_name'), price: num(val('sv_price')), unitId: val('sv_unit') || null };
   var pr = id ? updateRec('services', id, data) : createRec('services', data);
-  pr.then(function(){ toast('Đã lưu dịch vụ'); go('services'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu dịch vụ'); go('services'); unlockSave('service'); }).catch(function(e){ errToast(e); unlockSave('service'); });
 }
 VIEWS.services = viewServices; VIEWS.serviceForm = viewServiceForm;
 
@@ -3216,6 +3239,7 @@ function viewStaffForm(p){
   locInit('st', { province: a ? a.province : '', district: a ? a.district : '', ward: a ? a.ward : '' });
 }
 function saveStaff(id){
+  if(!lockSave('staff')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var data = { name: val('st_name'), phone: val('st_phone'), role: val('st_role'),
     dob: val('st_dob') || null, gender: val('st_gender'), job: val('st_job'),
     maritalStatus: val('st_marital'), email: val('st_email'), idCard: val('st_idcard'),
@@ -3224,7 +3248,7 @@ function saveStaff(id){
   var pr;
   if(id) pr = updateRec('accounts', id, data);
   else { data.password = document.getElementById('st_pw').value || '123456'; data.modules = []; data.houseIds = []; pr = createRec('accounts', data); }
-  pr.then(function(){ toast('Đã lưu nhân viên'); go('staff'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu nhân viên'); go('staff'); unlockSave('staff'); }).catch(function(e){ errToast(e); unlockSave('staff'); });
 }
 VIEWS.staff = viewStaff; VIEWS.staffForm = viewStaffForm;
 
@@ -3293,12 +3317,13 @@ function viewVehicleForm(p){
   setContent(h);
 }
 function saveVehicle(id){
+  if(!lockSave('vehicle')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var room = byId(db.rooms, val('v_room'));
   var data = { houseId: room ? room.houseId : val('v_house'), roomId: val('v_room') || null,
     type: val('v_type'), plate: val('v_plate'), ownerName: val('v_owner'),
     brand: val('v_brand'), color: val('v_color'), fee: num(val('v_fee')) };
   var pr = id ? updateRec('vehicles', id, data) : createRec('vehicles', data);
-  pr.then(function(){ toast('Đã lưu xe'); go('vehicles'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu xe'); go('vehicles'); unlockSave('vehicle'); }).catch(function(e){ errToast(e); unlockSave('vehicle'); });
 }
 var assetFilter = {};
 function assetOwnerLabel(a){
@@ -3425,7 +3450,7 @@ function viewUnits(){
   var h = pageTitle('Đơn vị tính');
   h += '<form class="filters" onsubmit="event.preventDefault();saveUnit()">' +
     '<div class="fg"><label>Tên đơn vị mới</label>'+inp('un_name', '', 'text', 'placeholder="VD: lượt"')+'</div>' +
-    '<button class="btn green">+ Thêm đơn vị</button></form>';
+    '<button class="btn green" type="submit">+ Thêm đơn vị</button></form>';
   h += tableHtml(['STT','Tên đơn vị',''], db.units.map(function(u, i){
     return '<tr><td>'+(i+1)+'</td><td><b>'+esc(u.name)+'</b></td>' +
       '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Đơn vị '+esc(u.name)+'\',\'units\',\''+u.id+'\')">Xóa</button></td></tr>';
@@ -3434,7 +3459,8 @@ function viewUnits(){
 }
 function saveUnit(){
   if(!val('un_name')){ toast('Nhập tên đơn vị'); return; }
-  createRec('units', { name: val('un_name') }).then(function(){ toast('Đã thêm đơn vị'); go('units'); }).catch(errToast);
+  if(!lockSave('unit')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
+  createRec('units', { name: val('un_name') }).then(function(){ toast('Đã thêm đơn vị'); go('units'); unlockSave('unit'); }).catch(function(e){ errToast(e); unlockSave('unit'); });
 }
 function viewCustomers(){
   var h = pageTitle('Khách thuê');
@@ -3457,9 +3483,10 @@ function viewCustomerForm(p){
   setContent(h);
 }
 function saveCustomer(id){
+  if(!lockSave('customer')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
   var data = collectCust('cm');
   var pr = id ? updateRec('customers', id, data) : createRec('customers', data);
-  pr.then(function(){ toast('Đã lưu khách'); go('customers'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu khách'); go('customers'); unlockSave('customer'); }).catch(function(e){ errToast(e); unlockSave('customer'); });
 }
 function viewSettings(){
   var u = currentUser || {};

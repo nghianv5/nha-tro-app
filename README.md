@@ -821,6 +821,62 @@ xóa phòng vẫn hoạt động.
   sách, xóa còn nhà/HĐ bị chặn có thông báo rõ ràng, xóa không liên quan
   thành công, sai mật khẩu không xóa).
 
+## Đợt 25 — Chống trùng key + chống bấm Lưu liên tục
+
+- **Nguyên nhân:** bấm nút "Thêm nhà" liên tục (hoặc nhập trùng) tạo ra 2
+  bản ghi giống nhau vì trước đây không có lớp kiểm tra nào.
+- **Lớp chặn chính ở backend** (`backend/dupcheck.py`, gắn qua hook
+  `before_create`/`before_update` của router CRUD — cùng mẫu với
+  `_guard_landlord_delete` đợt 24): tạo/sửa trùng key thì API trả **400 +
+  thông báo rõ ràng bằng tiếng Việt nêu rõ bản ghi xung đột**, frontend
+  hiện qua `errToast`. **Không thêm unique constraint ở DB** (tránh
+  migration vỡ trên data cũ đã có trùng) và **không tự xóa/gộp data trùng
+  đã tồn tại** — chỉ chặn phát sinh mới. Vì vậy sửa mà key không đổi (sau
+  chuẩn hóa) thì luôn được, kể cả khi DB cũ đã có bản ghi khác trùng key
+  đó; chỉ khi đổi sang key của bản ghi khác thì mới chặn.
+- **Chuẩn hóa key trước khi so** (so trong Python, không phụ thuộc
+  collation của SQLite/PostgreSQL): text (địa chỉ, tên) trim + gộp khoảng
+  trắng thừa + không phân biệt hoa/thường; SĐT bỏ khoảng trắng/gạch
+  ngang/chấm/ngoặc + đổi đầu +84 thành 0; biển số xe bỏ khoảng
+  trắng/gạch/chấm + viết hoa.
+- **Key từng màn:**
+  - Nhà: **địa chỉ nhà** (đúng yêu cầu) — vd "Địa chỉ “123 Đường A” đã tồn
+    tại (nhà “Nhà X”). Vui lòng mở nhà đó để sửa thay vì thêm nhà mới."
+    Áp dụng cả khi lưu từ form nhà, kể cả chế độ "Quản lý thay chủ".
+  - Chủ nhà: **SĐT** — cả tạo từ màn Quản lý chủ nhà lẫn nhập chủ nhà mới
+    inline trong form nhà (cùng đi qua API `/landlords` nên cùng bị chặn);
+    thông báo nêu tên chủ nhà đó và hướng dẫn chọn từ danh sách thay vì
+    nhập mới, không tự gộp/sửa hồ sơ người ta.
+  - Khách thuê: **SĐT**.
+  - Phòng: **tên phòng trong cùng một nhà** (khác nhà trùng tên thì được).
+  - Dịch vụ: **tên dịch vụ**. Đơn vị tính: **tên đơn vị**. Xe: **biển số**.
+  - Nhân viên/tài khoản: **SĐT** (SĐT là tài khoản đăng nhập nên trùng là
+    hỏng đăng nhập).
+  - Một nhà chỉ có một **HĐ chủ nhà đang hoạt động**, một phòng chỉ có
+    một **HĐ thuê đang hoạt động** — tạo HĐ đang hoạt động mới trong khi
+    đã có HĐ đang hoạt động khác cho cùng nhà/phòng thì chặn; HĐ đã thanh
+    lý không tính; sửa mà giữ nguyên HĐ đang hoạt động của chính nó thì
+    được.
+- **Không đụng tới:** hóa đơn, phiếu thu/chi, cọc, chốt điện nước (bản ghi
+  giao dịch, không có key tự nhiên duy nhất).
+- **Frontend chống bấm liên tục:** nút Lưu của 10 form (nhà, phòng, hợp
+  đồng thuê, hợp đồng chủ nhà, chủ nhà, khách thuê, dịch vụ, đơn vị tính,
+  xe, nhân viên) bị disable trong lúc request lưu đang chạy và mở lại khi
+  xong/lỗi (`lockSave`/`unlockSave` trong `app.js`); bấm đúp cũng chỉ tạo
+  1 request. Lớp chặn backend vẫn là quyết định cuối cùng.
+- Kiểm chứng: pytest **81/81** (72 cũ + 9 test mới
+  `tests/test_dupcheck.py`: tạo trùng → 400 + bản ghi cũ còn nguyên; sửa
+  sang key người khác → 400; sửa giữ key mình → 200; chuẩn hóa địa chỉ/
+  SĐT/biển số; phòng trùng tên khác nhà thì được; HĐ đang hoạt động thứ
+  hai thì chặn, HĐ sau thanh lý thì được); harness jsdom mới
+  `workspace/.deps/harness15.js` **23/23 assert pass** (bấm Lưu chủ nhà/
+  Thêm nhà/Thêm đơn vị 2 lần liên tục chỉ tạo 1 POST + nút bị disable
+  trong lúc lưu + mở khóa sau khi xong/lỗi; thông báo trùng SĐT hiển thị
+  rõ tên chủ nhà xung đột và hướng dẫn chọn từ danh sách). 2 test cũ phải
+  sửa giá trị dựng sẵn cho khỏi va chạm luật mới (test_map dùng địa chỉ
+  kề bên vì dữ liệu mẫu đã có "372 Xã Đàn"; test_delete_house cho test FK
+  dùng SĐT khách/chủ khác vì DB test dùng chung cả session).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

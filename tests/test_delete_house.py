@@ -16,23 +16,27 @@ from sqlalchemy import event
 from conftest import login_headers, make_contract, make_house, make_room
 
 
-def _build_full_house(client, address):
+def _build_full_house(client, address, cust_phone="0900009911",
+                      ll_phone="0900009922"):
     """Nhà có đủ dữ liệu liên quan: phòng + HĐ thuê + hóa đơn (+ dòng) +
-    mã điện/nước + tài sản + HĐ chủ nhà + cọc + chốt chỉ số + phiếu thu."""
+    mã điện/nước + tài sản + HĐ chủ nhà + cọc + chốt chỉ số + phiếu thu.
+    SĐT khách/chủ nhà nhận qua tham số vì DB test dùng chung cả session:
+    test thứ hai xây nhà đầy đủ phải dùng SĐT khác (đợt 25: SĐT là key
+    chống trùng của khách thuê và chủ nhà)."""
     from backend.database import SessionLocal
     from backend import models
 
     house = make_house(client, address)
     hid = house["id"]
     room = make_room(client, hid, "Phòng Xóa Test")
-    contract = make_contract(client, hid, room["id"], phone="0900009911")
+    contract = make_contract(client, hid, room["id"], phone=cust_phone)
     inv = client.post("/api/invoices", json={
         "kind": "monthly", "houseId": hid, "roomId": room["id"],
         "month": "2026-10", "roomFee": 3000000, "total": 3190000,
         "status": "unpaid"}).json()
     assert inv["id"], inv
     ll = client.post("/api/landlords", json={
-        "name": "Chủ Xóa Test", "phone": "0900009922"}).json()
+        "name": "Chủ Xóa Test", "phone": ll_phone}).json()
     lc = client.post("/api/landlord-contracts", json={
         "landlordId": ll["id"], "houseId": hid, "rentPrice": 5000000,
         "deposit": 5000000, "startDate": "2026-08-01",
@@ -110,7 +114,8 @@ def test_delete_house_under_fk_enforcement_like_postgres():
     try:
         c = TestClient(app, raise_server_exceptions=False)
         c.headers.update(login_headers(c, "0901234567", "admin123"))
-        data = _build_full_house(c, "98 Đường Xóa Nhà FK")
+        data = _build_full_house(c, "98 Đường Xóa Nhà FK",
+                                 cust_phone="0900009913", ll_phone="0900009924")
         hid = data["house"]["id"]
         r = c.delete(f"/api/houses/{hid}")
         assert r.status_code == 200, r.text

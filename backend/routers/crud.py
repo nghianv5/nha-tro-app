@@ -10,6 +10,11 @@ Tham số bảo mật (tùy chọn):
   (vd accounts: tách 'password' -> băm thành 'passwordHash').
 - before_delete: hook chạy TRƯỚC khi xóa bản ghi, trong cùng transaction
   (vd xóa nhà: xóa kèm dữ liệu liên quan để không vi phạm FK trên PostgreSQL).
+- before_create(db, data): hook chạy TRƯỚC khi tạo bản ghi, có quyền truy
+  cập DB (vd chặn trùng key tự nhiên — xem backend/dupcheck.py). Raise
+  HTTPException để hủy thao tác.
+- before_update(db, obj, data): hook chạy TRƯỚC khi sửa bản ghi, nhận bản
+  ghi cũ và dict field mới (exclude_unset). Raise HTTPException để hủy.
 """
 from typing import List, Optional
 
@@ -24,7 +29,8 @@ FILTER_PARAMS = ["houseId", "roomId", "status", "kind", "type", "month",
 
 def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
                      dependencies=None, write_dependencies=None, create_mapper=None,
-                     create_enrich=None, before_delete=None):
+                     create_enrich=None, before_delete=None,
+                     before_create=None, before_update=None):
     """create_enrich(db, data): hook tùy chọn chạy TRƯỚC khi tạo bản ghi, có
     quyền truy cập DB (vd tự sinh mã HĐ cọc/phiếu thu từ tên phòng)."""
     router = APIRouter(prefix=prefix, tags=[prefix.strip("/")],
@@ -69,6 +75,8 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
             data = create_mapper(data)
         if create_enrich is not None:
             create_enrich(db, data)
+        if before_create is not None:
+            before_create(db, data)
         obj = model(**data)
         db.add(obj)
         db.commit()
@@ -80,7 +88,10 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(404, "Không tìm thấy bản ghi")
-        for key, value in payload.model_dump(exclude_unset=True).items():
+        data = payload.model_dump(exclude_unset=True)
+        if before_update is not None:
+            before_update(db, obj, data)
+        for key, value in data.items():
             setattr(obj, key, value)
         db.commit()
         db.refresh(obj)

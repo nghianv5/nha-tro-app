@@ -13,6 +13,16 @@ from fastapi.staticfiles import StaticFiles
 
 from . import models, schemas
 from .database import SessionLocal, engine, ensure_columns
+from .dupcheck import (guard_account_create, guard_account_update,
+                       guard_contract_create, guard_contract_update,
+                       guard_customer_create, guard_customer_update,
+                       guard_house_create, guard_house_update,
+                       guard_landlord_create, guard_landlord_update,
+                       guard_lc_create, guard_lc_update, guard_room_create,
+                       guard_room_update, guard_service_create,
+                       guard_service_update, guard_unit_create,
+                       guard_unit_update, guard_vehicle_create,
+                       guard_vehicle_update)
 from .routers import auth, business, upload as upload_router_mod
 from .routers.crud import make_crud_router
 from .security import get_current_user, hash_password, require_admin
@@ -202,20 +212,20 @@ def _guard_landlord_delete(db, landlord):
 app.include_router(auth.router, prefix=API)
 
 # ----- Router CRUD cho từng module -----
-app.include_router(make_crud_router(models.House, schemas.HouseOut, schemas.HouseCreate, schemas.HouseUpdate, API + "/houses", dependencies=_LOGIN_REQUIRED, before_delete=_delete_house_cascade), prefix="")
-app.include_router(make_crud_router(models.Room, schemas.RoomOut, schemas.RoomCreate, schemas.RoomUpdate, API + "/rooms", dependencies=_LOGIN_REQUIRED), prefix="")
-app.include_router(make_crud_router(models.Customer, schemas.CustomerOut, schemas.CustomerCreate, schemas.CustomerUpdate, API + "/customers", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.House, schemas.HouseOut, schemas.HouseCreate, schemas.HouseUpdate, API + "/houses", dependencies=_LOGIN_REQUIRED, before_delete=_delete_house_cascade, before_create=guard_house_create, before_update=guard_house_update), prefix="")
+app.include_router(make_crud_router(models.Room, schemas.RoomOut, schemas.RoomCreate, schemas.RoomUpdate, API + "/rooms", dependencies=_LOGIN_REQUIRED, before_create=guard_room_create, before_update=guard_room_update), prefix="")
+app.include_router(make_crud_router(models.Customer, schemas.CustomerOut, schemas.CustomerCreate, schemas.CustomerUpdate, API + "/customers", dependencies=_LOGIN_REQUIRED, before_create=guard_customer_create, before_update=guard_customer_update), prefix="")
 app.include_router(make_crud_router(models.MeterReading, schemas.MeterReadingOut, schemas.MeterReadingCreate, schemas.MeterReadingUpdate, API + "/meter-readings", dependencies=_LOGIN_REQUIRED), prefix="")
-app.include_router(make_crud_router(models.Vehicle, schemas.VehicleOut, schemas.VehicleCreate, schemas.VehicleUpdate, API + "/vehicles", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.Vehicle, schemas.VehicleOut, schemas.VehicleCreate, schemas.VehicleUpdate, API + "/vehicles", dependencies=_LOGIN_REQUIRED, before_create=guard_vehicle_create, before_update=guard_vehicle_update), prefix="")
 app.include_router(make_crud_router(models.Asset, schemas.AssetOut, schemas.AssetCreate, schemas.AssetUpdate, API + "/assets", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_asset), prefix="")
-app.include_router(make_crud_router(models.Service, schemas.ServiceOut, schemas.ServiceCreate, schemas.ServiceUpdate, API + "/services", dependencies=_LOGIN_REQUIRED), prefix="")
-app.include_router(make_crud_router(models.Unit, schemas.UnitOut, schemas.UnitCreate, schemas.UnitUpdate, API + "/units", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.Service, schemas.ServiceOut, schemas.ServiceCreate, schemas.ServiceUpdate, API + "/services", dependencies=_LOGIN_REQUIRED, before_create=guard_service_create, before_update=guard_service_update), prefix="")
+app.include_router(make_crud_router(models.Unit, schemas.UnitOut, schemas.UnitCreate, schemas.UnitUpdate, API + "/units", dependencies=_LOGIN_REQUIRED, before_create=guard_unit_create, before_update=guard_unit_update), prefix="")
 app.include_router(make_crud_router(models.Expense, schemas.ExpenseOut, schemas.ExpenseCreate, schemas.ExpenseUpdate, API + "/expenses", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_expense), prefix="")
 app.include_router(make_crud_router(models.Incident, schemas.IncidentOut, schemas.IncidentCreate, schemas.IncidentUpdate, API + "/incidents", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Deposit, schemas.DepositOut, schemas.DepositCreate, schemas.DepositUpdate, API + "/deposits", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_deposit), prefix="")
-app.include_router(make_crud_router(models.Contract, schemas.ContractOut, schemas.ContractCreate, schemas.ContractUpdate, API + "/contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_contract), prefix="")
-app.include_router(make_crud_router(models.Landlord, schemas.LandlordOut, schemas.LandlordCreate, schemas.LandlordUpdate, API + "/landlords", dependencies=_LOGIN_REQUIRED, before_delete=_guard_landlord_delete), prefix="")
-app.include_router(make_crud_router(models.LandlordContract, schemas.LandlordContractOut, schemas.LandlordContractCreate, schemas.LandlordContractUpdate, API + "/landlord-contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_landlord_contract), prefix="")
+app.include_router(make_crud_router(models.Contract, schemas.ContractOut, schemas.ContractCreate, schemas.ContractUpdate, API + "/contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_contract, before_create=guard_contract_create, before_update=guard_contract_update), prefix="")
+app.include_router(make_crud_router(models.Landlord, schemas.LandlordOut, schemas.LandlordCreate, schemas.LandlordUpdate, API + "/landlords", dependencies=_LOGIN_REQUIRED, before_delete=_guard_landlord_delete, before_create=guard_landlord_create, before_update=guard_landlord_update), prefix="")
+app.include_router(make_crud_router(models.LandlordContract, schemas.LandlordContractOut, schemas.LandlordContractCreate, schemas.LandlordContractUpdate, API + "/landlord-contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_landlord_contract, before_create=guard_lc_create, before_update=guard_lc_update), prefix="")
 app.include_router(make_crud_router(models.HousePayment, schemas.HousePaymentOut, schemas.HousePaymentCreate, schemas.HousePaymentUpdate, API + "/house-payments", dependencies=_LOGIN_REQUIRED), prefix="")
 # Module mới theo SPEC-WEB: phiếu thu, chức vụ, phân chức vụ theo nhà, điện nước nhà
 app.include_router(make_crud_router(models.Receipt, schemas.ReceiptOut, schemas.ReceiptCreate, schemas.ReceiptUpdate, API + "/receipts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_receipt), prefix="")
@@ -225,7 +235,8 @@ app.include_router(make_crud_router(models.HouseUtility, schemas.HouseUtilityOut
 # Tài khoản: đọc chỉ cần đăng nhập; tạo/sửa/xóa chỉ admin
 app.include_router(make_crud_router(models.Account, schemas.AccountOut, schemas.AccountCreate, schemas.AccountUpdate, API + "/accounts",
                                     dependencies=_LOGIN_REQUIRED, write_dependencies=_ADMIN_REQUIRED,
-                                    create_mapper=_account_create_mapper), prefix="")
+                                    create_mapper=_account_create_mapper,
+                                    before_create=guard_account_create, before_update=guard_account_update), prefix="")
 
 # ----- Router nghiệp vụ (đã tự gắn yêu cầu đăng nhập trong business.py) -----
 app.include_router(business.router, prefix=API)

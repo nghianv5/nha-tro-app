@@ -12,7 +12,9 @@ LAT, LNG = 21.0175123, 105.8321456  # ~372 Xã Đàn, Đống Đa, Hà Nội
 
 def test_house_latlng_roundtrip(client):
     r = client.post("/api/houses", json={
-        "address": "372 Xã Đàn", "province": "Hà Nội", "district": "Đống Đa",
+        # Đợt 25: địa chỉ là key chống trùng của nhà — dùng số nhà kề bên vì
+        # dữ liệu mẫu đã có nhà ở "372 Xã Đàn"; test này chỉ kiểm tra tọa độ.
+        "address": "373 Xã Đàn", "province": "Hà Nội", "district": "Đống Đa",
         "ward": "Phương Liên", "floors": 4, "floorArea": 65, "bedrooms": 13,
         "bathrooms": 5, "type": "own", "latitude": LAT, "longitude": LNG})
     assert r.status_code == 201, r.text
