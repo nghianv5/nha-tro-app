@@ -18,7 +18,9 @@ quản lý tài khoản chỉ dành cho `admin`.
 
 ## Đăng nhập & tài khoản mặc định
 
-Sau lần chạy đầu (dữ liệu mẫu được nạp), đăng nhập bằng:
+Sau lần chạy đầu, tài khoản admin mặc định luôn có sẵn (server tự tạo khi
+bảng tài khoản trống). Tài khoản staff mẫu chỉ có khi đã nạp dữ liệu mẫu.
+Đăng nhập bằng:
 
 | Vai trò | Số điện thoại | Mật khẩu | Quyền |
 |---|---|---|---|
@@ -52,7 +54,8 @@ docker compose up --build
 ```
 
 Mở http://localhost:8000 — gồm 2 service: `db` (PostgreSQL 16, dữ liệu lưu trong volume `pgdata`)
-và `web` (FastAPI + frontend). Dữ liệu mẫu tự nạp ở lần chạy đầu khi DB trống.
+và `web` (FastAPI + frontend). Khởi động không tự nạp dữ liệu mẫu (xem mục
+"Nạp dữ liệu mẫu" bên dưới).
 
 ### Cách 2 — Chạy tay
 
@@ -75,10 +78,20 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000
 Mở http://localhost:8000. Đổi chuỗi kết nối qua biến môi trường `DATABASE_URL` nếu cần
 (DB SQLite cũng chạy được, vd để thử nhanh: `DATABASE_URL=sqlite:///./nhatro.db`).
 
-### Nạp dữ liệu mẫu
+### Dữ liệu lưu ở đâu & nạp dữ liệu mẫu
 
-- Tự động: khi DB trống, server tự seed ở lần khởi động đầu.
-- Thủ công: `python -m backend.seed` (cũng chỉ nạp khi DB trống).
+- Dữ liệu thật nằm trong DB mà `DATABASE_URL` trỏ tới (mặc định PostgreSQL
+  localhost, DB `nhatro`; trên Render là PostgreSQL của Render; đặt
+  `DATABASE_URL=<redacted>` để dùng file SQLite). Sửa source, khởi động
+  lại hay deploy lại **không nạp, không xóa, không ghi đè dữ liệu nghiệp vụ**:
+  lúc khởi động, server chỉ tạo bảng còn thiếu, bổ sung cột mới bằng
+  `ensure_columns()` và đảm bảo có tài khoản admin đăng nhập. (Ngoại lệ
+  duy nhất đã ghi ở mục trên: hóa đơn cũ ở trạng thái đã thanh toán được
+  tự gán `paidAmount` cho đúng công thức khi nâng cấp.)
+- Muốn có dữ liệu mẫu: đặt `SEED_SAMPLE_DATA=true` rồi khởi động server
+  khi DB còn trống, hoặc chạy tay `python -m backend.seed` (cũng chỉ nạp
+  khi DB trống). Mặc định cờ này **tắt**: tắt rồi thì khởi động lại cũng
+  không nạp thêm gì, kể cả khi bảng nhà đã bị xóa trống.
 - Đợt 14 đã gỡ hẳn chức năng "Xóa dữ liệu & nạp lại dữ liệu mẫu" khỏi giao diện và API để tránh bấm nhầm làm mất dữ liệu thật.
 
 ### Chạy test
@@ -776,6 +789,37 @@ xóa phòng vẫn hoạt động.
   HĐ và không xóa HĐ cũ, bỏ chọn thì HĐ cập nhật lại, Sửa nhà khôi phục cờ;
   Phần 2: gõ thử từng ô tiền chính, payload lưu là số thuần, nạp lại hiển
   thị có dấu chấm, lọc giá phòng vẫn đúng, ô số không phải tiền không đổi).
+
+## Màn Quản lý chủ nhà (dropdown Quản lý)
+
+- Trước đây chủ nhà chỉ xem được trong bảng lồng ở màn Hợp đồng (cùng nút
+  "+ Thêm chủ nhà"); nay có màn riêng **Quản lý → Chủ nhà** (route
+  `landlords`): bảng STT, Họ tên, SĐT, CMND, Địa chỉ thường trú, Email,
+  **Số nhà đang sở hữu** (đếm nhà có `landlordId` bằng chủ nhà đó), ô tìm
+  kiếm theo tên/SĐT, nút "+ Thêm chủ nhà". Mỗi dòng có Sửa (mở form chủ nhà
+  sẵn có, đủ hồ sơ + ảnh CMND) và Xóa (qua modal mật khẩu chuẩn của app).
+- Dropdown Quản lý nay: Xe, Tài sản, **Chủ nhà**, Dịch vụ, Đơn vị tính,
+  Cài đặt. `NAVMAP` cập nhật để cả màn danh sách và form chủ nhà đều sáng
+  mục Quản lý; trên mobile các mục Quản lý vẫn vào được qua top nav cuộn
+  (bottom nav không chứa nhóm Quản lý, như các mục khác).
+- Form chủ nhà mở từ màn mới sẽ quay lại màn Quản lý chủ nhà sau khi lưu
+  hoặc bấm Quay lại; mở từ màn Hợp đồng thì vẫn về tab chủ nhà của màn
+  Hợp đồng như cũ (tham số `back` của route).
+- **Xóa chủ nhà an toàn (khác với xóa nhà):** vì `houses.landlordId`,
+  `landlordContracts.landlordId` và `housePayments.landlordId` đều FK tới
+  `landlords.id`, xóa bừa sẽ lỗi khóa ngoại trên PostgreSQL (bài học đợt 11).
+  Backend chặn ở tầng API (`before_delete` của router landlords): nếu chủ nhà
+  còn nhà hoặc hợp đồng hoặc thanh toán tiền nhà liên quan thì trả lỗi 400
+  rõ ràng (vd "Không thể xóa chủ nhà X vì còn 2 nhà / 1 hợp đồng chủ nhà
+  liên quan..."), bản ghi còn nguyên; chỉ khi không còn liên quan mới xóa
+  được. Không tự xóa kèm nhà/hợp đồng — người dùng tự xử lý liên quan trước.
+- Kiểm chứng: pytest 72/72 (67 cũ + 5 test mới `tests/test_landlord_delete.py`,
+  gồm kịch bản FK pragma bật mô phỏng PostgreSQL); harness jsdom mới
+  `workspace/.deps/harness14.js` **35/35 assert pass** (dropdown có mục Chủ
+  nhà, NAVMAP sáng Quản lý, đủ cột + đếm số nhà đúng, tìm kiếm theo tên/SĐT,
+  Sửa nạp đúng hồ sơ, Quay lại đúng màn gọi, lưu từ màn mới về đúng danh
+  sách, xóa còn nhà/HĐ bị chặn có thông báo rõ ràng, xóa không liên quan
+  thành công, sai mật khẩu không xóa).
 
 ## Ghi chú
 

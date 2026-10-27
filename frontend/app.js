@@ -525,7 +525,7 @@ function lcFormRefresh(){
 /* ---------- Điều hướng ---------- */
 var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', houseDetail:'houses', houseUtilities:'houses', utilityForm:'houses',
   rooms:'rooms', roomForm:'rooms', roomDetail:'rooms', deposits:'deposits', depositForm:'deposits',
-  contracts:'contracts', contractForm:'contracts', contractDetail:'contracts', liquidate:'contracts', landlordContractForm:'contracts', landlordForm:'contracts',
+  contracts:'contracts', contractForm:'contracts', contractDetail:'contracts', liquidate:'contracts', landlordContractForm:'contracts',
   invoices:'invoices', invoiceDetail:'invoices', monthlyForm:'invoices', otherForm:'invoices', specialInvoices:'invoices', specialSend:'invoices', invoiceEdit:'invoices', invoicePrint:'invoices', paymentsAll:'invoices',
   finance:'finance', receiptForm:'finance', expenseForm:'finance',
   staff:'staff', staffForm:'staff', notifications:'notifications',
@@ -534,7 +534,7 @@ var NAVMAP = { dashboard:'dashboard', houses:'houses', houseForm:'houses', house
   /* Đợt 17: Dịch vụ nằm trong dropdown Quản lý nên sáng mục Quản lý;
      Sự cố/Khách thuê đã ra menu chính nên sáng riêng từng mục. */
   vehicles:'manage', vehicleForm:'manage', assets:'manage', assetForm:'manage', services:'manage', serviceForm:'manage',
-  units:'manage', settings:'manage' };
+  units:'manage', settings:'manage', landlords:'manage', landlordForm:'manage' };
 var curView = 'dashboard', curParams = {};
 function toggleMenu(ev){ ev.stopPropagation(); document.getElementById('manageMenu').classList.toggle('open'); }
 document.addEventListener('click', function(){ var m=document.getElementById('manageMenu'); if(m) m.classList.remove('open'); });
@@ -2150,6 +2150,34 @@ function saveLandlordContract(id){
   var pr = id ? updateRec('landlordContracts', id, data) : createRec('landlordContracts', data);
   pr.then(function(){ toast('Đã lưu hợp đồng chủ nhà'); contractState.sub='landlord'; go('contracts'); }).catch(errToast);
 }
+/* ----- Màn Quản lý chủ nhà (dropdown Quản lý): danh sách riêng, trước đây
+   chỉ xem được bảng chủ nhà lồng trong màn Hợp đồng ----- */
+var landlordFilter = { q: '' };
+function viewLandlords(){
+  var q = (landlordFilter.q || '').toLowerCase();
+  var list = db.landlords.filter(function(l){
+    return !q || (l.name || '').toLowerCase().indexOf(q) >= 0 || (l.phone || '').indexOf(q) >= 0;
+  });
+  var h = pageTitle('Quản lý chủ nhà');
+  h += '<div class="btnrow"><button class="btn green" onclick="go(\'landlordForm\',{back:\'landlords\'})">+ Thêm chủ nhà</button></div>';
+  h += '<form class="filters" onsubmit="event.preventDefault();landlordFilter.q=val(\'llf_q\');viewLandlords();">' +
+    '<div class="fg"><label>Tìm kiếm (tên/SĐT)</label>'+inp('llf_q', landlordFilter.q)+'</div>' +
+    '<button class="btn">Tìm</button>' +
+    '<button class="btn gray" type="button" onclick="landlordFilter.q=\'\';viewLandlords();">Tất cả</button></form>';
+  h += tableHtml(['STT','Họ tên','SĐT','CMND','Địa chỉ thường trú','Email','Số nhà đang sở hữu',''], list.map(function(l, i){
+    var n = db.houses.filter(function(hs){ return hs.landlordId === l.id; }).length;
+    return '<tr><td>'+(i+1)+'</td><td><b>'+esc(l.name)+'</b></td><td>'+esc(l.phone)+'</td><td>'+esc(l.idCard||'')+'</td><td>'+esc(l.permanentAddress || l.address || '')+'</td><td>'+esc(l.email||'')+'</td><td>'+n+'</td>' +
+      '<td class="act"><button class="linkbtn" onclick="go(\'landlordForm\',{id:\''+l.id+'\',back:\'landlords\'})">Sửa</button>' +
+      '<button class="linkbtn red" onclick="delBtn(\'Chủ nhà '+esc(l.name)+'\',\'landlords\',\''+l.id+'\',function(){ loadAll().then(function(){ go(\'landlords\'); }).catch(errToast); })">Xóa</button></td></tr>';
+  }).join(''), 'Chưa có chủ nhà');
+  setContent(h);
+}
+/* Quay lại từ form chủ nhà: vào từ màn Quản lý chủ nhà thì về đó, vào từ
+   màn Hợp đồng thì về tab chủ nhà của màn Hợp đồng như cũ. */
+function backFromLandlordForm(){
+  if(curParams.back){ go(curParams.back); }
+  else { contractState.sub='landlord'; go('contracts'); }
+}
 function viewLandlordForm(p){
   var l = p.id ? byId(db.landlords, p.id) : null;
   var h = pageTitle(l ? 'Sửa chủ nhà' : 'Thêm chủ nhà');
@@ -2162,7 +2190,7 @@ function viewLandlordForm(p){
     landlordCmndHtml(l, 'll') +
     fld('Địa chỉ thường trú', inp('ll_perm', l?l.permanentAddress:'')) + fld('Địa chỉ', inp('ll_addr', l?l.address:'')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">'+(l ? 'Lưu thay đổi' : 'Thêm chủ nhà')+'</button>' +
-    '<button class="btn gray" type="button" onclick="contractState.sub=\'landlord\';go(\'contracts\')">Quay lại</button></div></form>';
+    '<button class="btn gray" type="button" onclick="backFromLandlordForm()">Quay lại</button></div></form>';
   setContent(h);
 }
 function saveLandlord(id){
@@ -2172,11 +2200,12 @@ function saveLandlord(id){
     permanentAddress: val('ll_perm'),
     idCardImage1: val('ll_cmnd_front'), idCardImage2: val('ll_cmnd_back') };
   var pr = id ? updateRec('landlords', id, data) : createRec('landlords', data);
-  pr.then(function(){ toast('Đã lưu chủ nhà'); contractState.sub='landlord'; go('contracts'); }).catch(errToast);
+  pr.then(function(){ toast('Đã lưu chủ nhà'); backFromLandlordForm(); }).catch(errToast);
 }
 VIEWS.contracts = viewContracts; VIEWS.contractForm = viewContractForm;
 VIEWS.contractDetail = viewContractDetail; VIEWS.liquidate = viewLiquidate;
 VIEWS.landlordContractForm = viewLandlordContractForm; VIEWS.landlordForm = viewLandlordForm;
+VIEWS.landlords = viewLandlords;
 
 /* ================================================================
    6) HÓA ĐƠN

@@ -8,7 +8,7 @@ import os
 import re
 from datetime import datetime
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from . import models, schemas
@@ -16,7 +16,7 @@ from .database import SessionLocal, engine, ensure_columns
 from .routers import auth, business, upload as upload_router_mod
 from .routers.crud import make_crud_router
 from .security import get_current_user, hash_password, require_admin
-from .seed import seed_db
+from .seed import ensure_default_admin, seed_db
 
 models.Base.metadata.create_all(bind=engine)
 # DB cũ (vd trên Render): tự bổ sung các cột mới của SPEC-WEB, không cần xóa DB
@@ -40,10 +40,17 @@ try:
 finally:
     _session.close()
 
-# Tự nạp dữ liệu mẫu khi DB trống (lần chạy đầu)
+# Khởi động KHÔNG tự nạp dữ liệu mẫu: DB chỉ thay đổi do thao tác của
+# người dùng trong app. Chỉ đảm bảo có tài khoản đăng nhập (tạo admin mặc
+# định khi bảng accounts trống). Muốn có dữ liệu mẫu: đặt
+# SEED_SAMPLE_DATA=true (chỉ nạp khi DB trống) hoặc chạy tay
+# `python -m backend.seed`.
 _session = SessionLocal()
 try:
-    seed_db(_session)
+    if os.environ.get("SEED_SAMPLE_DATA", "").strip().lower() == "true":
+        seed_db(_session)
+    else:
+        ensure_default_admin(_session)
 finally:
     _session.close()
 
@@ -168,6 +175,29 @@ def _delete_house_cascade(db, house):
             acc.houseIds = [x for x in ids if x != hid]
 
 
+def _guard_landlord_delete(db, landlord):
+    """Chặn xóa chủ nhà còn dữ liệu liên quan (màn Quản lý chủ nhà):
+    houses.landlordId, landlordContracts.landlordId và housePayments.landlordId
+    đều FK tới landlords.id — xóa bừa sẽ vi phạm FK trên PostgreSQL (bài học
+    đợt 11 với nút xóa nhà: 500, bản ghi còn nguyên, người dùng chỉ thấy toast
+    lỗi thoáng qua). KHÔNG tự xóa kèm như xóa nhà: chủ nhà/hợp đồng là dữ liệu
+    độc lập, người dùng phải tự xử lý liên quan trước rồi xóa lại. Hook này
+    chạy trước db.delete trong cùng transaction của delete_item nên raise
+    HTTPException sẽ hủy toàn bộ thao tác xóa."""
+    n_houses = db.query(models.House).filter(models.House.landlordId == landlord.id).count()
+    n_contracts = db.query(models.LandlordContract).filter(models.LandlordContract.landlordId == landlord.id).count()
+    n_payments = db.query(models.HousePayment).filter(models.HousePayment.landlordId == landlord.id).count()
+    if n_houses or n_contracts or n_payments:
+        parts = []
+        if n_houses:
+            parts.append(f"{n_houses} nhà")
+        if n_contracts:
+            parts.append(f"{n_contracts} hợp đồng chủ nhà")
+        if n_payments:
+            parts.append(f"{n_payments} lần thanh toán tiền nhà")
+        raise HTTPException(400, f"Không thể xóa chủ nhà {landlord.name} vì còn {' / '.join(parts)} liên quan. Hãy xử lý các liên quan trước rồi xóa lại.")
+
+
 # ----- Router xác thực (login công khai, còn lại tự bảo vệ trong router) -----
 app.include_router(auth.router, prefix=API)
 
@@ -184,7 +214,7 @@ app.include_router(make_crud_router(models.Expense, schemas.ExpenseOut, schemas.
 app.include_router(make_crud_router(models.Incident, schemas.IncidentOut, schemas.IncidentCreate, schemas.IncidentUpdate, API + "/incidents", dependencies=_LOGIN_REQUIRED), prefix="")
 app.include_router(make_crud_router(models.Deposit, schemas.DepositOut, schemas.DepositCreate, schemas.DepositUpdate, API + "/deposits", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_deposit), prefix="")
 app.include_router(make_crud_router(models.Contract, schemas.ContractOut, schemas.ContractCreate, schemas.ContractUpdate, API + "/contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_contract), prefix="")
-app.include_router(make_crud_router(models.Landlord, schemas.LandlordOut, schemas.LandlordCreate, schemas.LandlordUpdate, API + "/landlords", dependencies=_LOGIN_REQUIRED), prefix="")
+app.include_router(make_crud_router(models.Landlord, schemas.LandlordOut, schemas.LandlordCreate, schemas.LandlordUpdate, API + "/landlords", dependencies=_LOGIN_REQUIRED, before_delete=_guard_landlord_delete), prefix="")
 app.include_router(make_crud_router(models.LandlordContract, schemas.LandlordContractOut, schemas.LandlordContractCreate, schemas.LandlordContractUpdate, API + "/landlord-contracts", dependencies=_LOGIN_REQUIRED, create_enrich=_enrich_landlord_contract), prefix="")
 app.include_router(make_crud_router(models.HousePayment, schemas.HousePaymentOut, schemas.HousePaymentCreate, schemas.HousePaymentUpdate, API + "/house-payments", dependencies=_LOGIN_REQUIRED), prefix="")
 # Module mới theo SPEC-WEB: phiếu thu, chức vụ, phân chức vụ theo nhà, điện nước nhà

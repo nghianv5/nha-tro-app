@@ -14,6 +14,22 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.main import app  # noqa: E402
+from backend import models  # noqa: E402
+from backend.database import SessionLocal  # noqa: E402
+from backend.seed import seed_db  # noqa: E402
+
+# Khởi động app ngoài đời không còn tự nạp dữ liệu mẫu nữa (xem README),
+# nên test nạp tường minh tại đây. Xóa tài khoản admin mặc định mà bước
+# khởi động vừa tạo để trạng thái DB test giống hệt dữ liệu mẫu cũ
+# (tránh trùng tài khoản admin theo số điện thoại và sai tên/hồ sơ admin
+# mà test_auth kiểm tra).
+_s = SessionLocal()
+try:
+    _s.query(models.Account).delete()
+    _s.commit()
+    seed_db(_s)
+finally:
+    _s.close()
 
 ADMIN_PHONE, ADMIN_PASSWORD = "0901234567", "admin123"
 STAFF_PHONE, STAFF_PASSWORD = "0901234568", "123456"
@@ -28,7 +44,8 @@ def login_headers(c, phone, password):
 
 @pytest.fixture(scope="session")
 def client():
-    # Import app đã tự tạo bảng + seed dữ liệu mẫu (DB trống).
+    # Import app chỉ tạo bảng + tài khoản admin mặc định; dữ liệu mẫu
+    # được nạp tường minh ở đầu file này (không dựa vào hành vi khởi động).
     # Client mặc định đăng nhập bằng tài khoản admin mẫu.
     c = TestClient(app)
     c.headers.update(login_headers(c, ADMIN_PHONE, ADMIN_PASSWORD))

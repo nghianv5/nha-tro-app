@@ -4,6 +4,11 @@ Chạy độc lập:  python -m backend.seed
 Chỉ nạp khi DB còn trống (lần chạy đầu). Đợt 14 đã gỡ hẳn chức năng
 xóa toàn bộ dữ liệu và nạp lại, nên không còn đường nào nạp đè lên
 dữ liệu hiện có.
+
+Từ đợt "DB không tự đổi": server khởi động KHÔNG tự gọi seed_db nữa.
+Dữ liệu mẫu chỉ được nạp khi bật cờ SEED_SAMPLE_DATA=true (và DB trống)
+hoặc khi chạy tay `python -m backend.seed`. Lúc khởi động, server chỉ
+gọi ensure_default_admin() để đảm bảo có tài khoản đăng nhập.
 """
 from datetime import date
 
@@ -34,6 +39,23 @@ def ensure_auth_accounts(db):
     admin.role = "admin"
     admin.passwordHash = hash_password(ADMIN_PASSWORD)
     db.commit()
+
+
+def ensure_default_admin(db):
+    """Khởi động server: chỉ đảm bảo có tài khoản đăng nhập, KHÔNG nạp
+    bất kỳ dữ liệu nghiệp vụ mẫu nào (không nhà, không phòng, không hợp
+    đồng, không hóa đơn, không dịch vụ mẫu).
+    - Bảng accounts trống -> tạo duy nhất tài khoản admin mặc định.
+    - Đã có tài khoản -> giữ nguyên, chỉ chạy nâng cấp tài khoản cũ
+      (ensure_auth_accounts) cho DB từ bản rất cũ chưa có mật khẩu."""
+    if db.query(models.Account).count() == 0:
+        db.add(models.Account(name="Quản trị viên", phone=ADMIN_PHONE,
+                              role="admin",
+                              passwordHash=hash_password(ADMIN_PASSWORD)))
+        db.commit()
+        return True
+    ensure_auth_accounts(db)
+    return False
 
 
 def seed_db(db):
