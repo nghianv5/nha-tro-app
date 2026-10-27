@@ -710,6 +710,73 @@ không bị đăng xuất, nhà còn nguyên; mật khẩu đúng → toast "Đ�
 nhà biến mất khỏi bảng; DELETE lỗi 500 → toast lỗi, nhà còn nguyên;
 xóa phòng vẫn hoạt động.
 
+## Đợt mới — Checkbox "Quản lý thay chủ" + phân cách hàng nghìn khi gõ số tiền
+
+### Phần 1 — Checkbox "Quản lý thay chủ" (form Thêm/Sửa nhà)
+- Đầu phần Hợp Đồng của form nhà có thêm checkbox **"Quản lý thay chủ"**.
+- Khi **chọn**: toàn bộ phần Hợp Đồng bị **ẩn đi và vô hiệu hóa** (không cần
+  nhập thông tin hợp đồng nữa); đồng thời phần **Chủ Nhà** trên màn hình này
+  **không còn bắt buộc** — các dấu `*` bắt buộc của trường chủ nhà được ẩn đi
+  (class `no-req` trên phần Chủ Nhà). Lưu ý: form vốn không có kiểm tra bắt
+  buộc bằng code (dấu `*` chỉ là hiển thị), nên việc "bỏ bắt buộc" ở đây là
+  ẩn dấu `*` và cho phép lưu khi để trống thông tin chủ nhà.
+- Khi **bỏ chọn**: trở về đúng hành vi hiện tại (phần Hợp Đồng hiện lại,
+  các input bật lại, dấu `*` của Chủ Nhà hiện lại).
+- Trạng thái checkbox được **lưu** vào cột mới `houses.managed_for_owner`
+  (Boolean, mặc định false; thêm qua `ensure_columns()` nên CSDL cũ tự có cột
+  khi khởi động, không mất dữ liệu) và schema `HouseCreate`/`HouseUpdate`;
+  mở form Sửa nhà sẽ khôi phục đúng trạng thái (đã chọn thì phần Hợp Đồng
+  vẫn ẩn).
+- Khi chọn và lưu: **không tạo/cập nhật hợp đồng chủ nhà**; tuyệt đối
+  **không xóa** hợp đồng chủ nhà đã có sẵn (nếu nhà từng có hợp đồng thì bản
+  ghi đó giữ nguyên). Thông tin chủ nhà nếu người dùng có nhập thì vẫn lưu
+  như bình thường, chỉ là không bắt buộc.
+
+### Phần 2 — Tự động phân cách hàng nghìn khi gõ số tiền
+- **Tất cả ô nhập tiền** trong app đều tự động nhóm 3 chữ số bằng dấu chấm
+  kiểu Việt Nam **ngay khi đang gõ** (vd gõ `1000000` → hiển thị `1.000.000`),
+  con trỏ không bị nhảy lung tung. Các ô tiền đổi từ `type="number"` sang
+  `type="text"` kèm `inputmode` phù hợp (`numeric` cho VND, `decimal` cho ô
+  triệu) và class `money` + `data-money` để hàm định dạng dùng chung nhận diện.
+- Hàm dùng chung (trong `frontend/app.js`, ngay sau `num()`):
+  `groupIntStr` (nhóm phần nguyên), `splitMoneyParts` (tách phần nguyên/thập
+  phân/chờ thập phân), `fmtMoneyDisplay` (chuỗi hiển thị), `moneyFmt` (định
+  dạng lại ô input và giữ vị trí con trỏ). Một listener `input` ở pha capture
+  trên `document` tự định dạng mọi ô `.money`, chạy trước các handler inline
+  (vd `lcFormRefresh()` tính "Tổng số tiền thanh toán" khi gõ tiền thuê).
+- Khi lưu, giá trị gửi đi vẫn là **số thuần** (bỏ dấu chấm): `num()` vốn đã
+  bỏ dấu chấm nên dùng được ngay cho VND; `numTrieu()` viết lại dùng
+  `splitMoneyParts` để xử lý đúng cả hai dạng nhập triệu.
+- **Riêng ô giá phòng nhập theo TRIỆU** (`r_price`, ô triệu duy nhất): giữ
+  phần thập phân người dùng nhập, chỉ nhóm phần nguyên; parser phân biệt
+  được `4.5` = 4,5 triệu và `1.200` = 1.200 triệu (trước đây `parseFloat`
+  đọc `1.200` thành 1,2 — đã sửa). Dấu phẩy cũng được hiểu là dấu thập phân
+  Việt Nam (`4,5` = 4,5 triệu); gõ `4.` hiển thị `4,` chờ nhập tiếp.
+- **Không áp dụng** cho các ô số không phải tiền (diện tích, số tầng, số
+  người, số tháng, số ngày, số lượng, chỉ số công tơ...) — các ô này vẫn giữ
+  `type="number"` như cũ.
+- Danh sách ô tiền đã rà soát và chuyển đổi (43 vị trí trong code):
+  form nhà `lc_rent`, `lc_deposit`; form phòng `r_price` (triệu),
+  `r_minDep`, `r_sv_new_price`, `rsv_price_*` (dòng dịch vụ phòng); form cọc
+  `dp_amount`, `dp_price`, `dp_rent`, `dp_mindep`, `dp_sv_dien`, `dp_sv_nuoc`,
+  `dp_xm_f`, `dp_ot_f`, `dp_xd_f`; form hợp đồng thuê `c_price`, `c_deposit`,
+  `c_dien`, `c_nuoc`, `c_dc`, `c_vs`, `c_net`, `c_xm_f`, `c_ot_f`, `c_xd_f`;
+  form hợp đồng chủ nhà độc lập `lc_rent`, `lc_deposit`; thanh toán tiền nhà
+  `hp_amount`; điện nước `pay_amount` (dialog trả), `u_amount` (form tiện ích),
+  `lm_dien`, `lm_nuoc`, `lm_internet`, `lm_vesinh` (chốt chủ nhà); thanh lý
+  `lq_prepaid`; hóa đơn `pay_amount` (dialog trả HĐ), `ie_roomfee`,
+  `ie_discount`, `ie_l_price_*` (dòng hóa đơn); hóa đơn đặc biệt `of_amount`;
+  phiếu thu `rc_amount`; phiếu chi `ex_amount`; dịch vụ `sv_price`; xe
+  `v_fee`; bộ lọc phòng `rf_pmin`, `rf_pmax` (lọc vẫn đúng vì `num()` bỏ dấu
+  chấm). Giá trị nạp lại khi Sửa cũng hiển thị dạng có dấu chấm (định dạng
+  lúc render trong `inp()` và khi điền tự động từ phòng — `depFillFromRoom`,
+  `contractRoomChange` — đều gọi `moneyFmt` sau khi gán giá trị).
+- Kiểm chứng: pytest 67/67; harness jsdom mới `workspace/.deps/harness13.js`
+  **102/102 assert pass** (Phần 1: ẩn/hiện + disable, lưu managed không tạo
+  HĐ và không xóa HĐ cũ, bỏ chọn thì HĐ cập nhật lại, Sửa nhà khôi phục cờ;
+  Phần 2: gõ thử từng ô tiền chính, payload lưu là số thuần, nạp lại hiển
+  thị có dấu chấm, lọc giá phòng vẫn đúng, ô số không phải tiền không đổi).
+
 ## Ghi chú
 
 - Tiền tệ: số nguyên VND; frontend hiển thị dạng `3.000.000đ`.

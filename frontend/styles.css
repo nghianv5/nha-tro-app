@@ -62,6 +62,8 @@ td.act{white-space:nowrap}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 16px}
 label.fl{display:block;font-size:13px;color:#616161;margin:10px 0 4px}
 label.fl b{color:#e53935}
+/* "Quản lý thay chủ": phần Chủ Nhà không còn bắt buộc -> ẩn dấu * */
+#ll_sec.no-req label.fl b{display:none}
 input,select,textarea{width:100%;padding:9px 10px;border:1px solid #cfd8dc;border-radius:8px;font-size:14px;background:#fff}
 textarea{resize:vertical;min-height:56px}
 .chk{display:inline-flex;align-items:center;gap:7px;padding:5px 10px 5px 0;font-size:14px}

@@ -67,6 +67,60 @@ function errToast(e){ toast('Lỗi: ' + (e.message || e)); }
 function fmt(n){ n = Math.round(Number(n)||0); return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.') + 'đ'; }
 function fmtNum(n){ return (Math.round(Number(n)||0)).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
 function num(v){ var x = parseInt(String(v==null?'':v).replace(/[^\d-]/g,''),10); return isNaN(x)?0:x; }
+/* ----- Định dạng tiền khi gõ: phân cách hàng nghìn bằng dấu chấm -----
+   - Ô vnđ (data-money="vnd"): chỉ số nguyên, nhóm 3 chữ số
+     (1000000 -> "1.000.000"); khi lưu num() đã bỏ dấu chấm nên payload
+     vẫn là số thuần.
+   - Ô triệu (data-money="trieu"): giữ phần thập phân, chỉ nhóm phần
+     nguyên; dấu phẩy là thập phân VN ("4,5" = 4.5 triệu), còn dấu chấm
+     đi kèm đúng 3 chữ số là phân cách nghìn ("1.200" = 1200 triệu,
+     khác "4.5" = 4.5 triệu). numTrieu() dùng chung splitMoneyParts
+     nên parse đúng cả hai dạng.
+   - Gõ được áp dụng qua listener 'input' (capture) bên dưới để các
+     handler oninput khác (vd lcFormRefresh) đọc giá trị đã định dạng. */
+function groupIntStr(d){ return String(d).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function splitMoneyParts(raw, isTrieu){
+  var s = String(raw == null ? '' : raw).trim();
+  if(!s) return null;
+  if(!isTrieu) return { int: s.replace(/\D/g, ''), dec: '', pending: false };
+  var ci = s.indexOf(',');
+  if(ci >= 0) return { int: s.slice(0, ci).replace(/\D/g, ''), dec: s.slice(ci + 1).replace(/\D/g, ''), pending: ci === s.length - 1 };
+  if(/^\d{1,3}(\.\d{3})+$/.test(s)) return { int: s.replace(/\./g, ''), dec: '', pending: false };
+  var m = s.match(/^(.*)\.(\d{1,2})$/);
+  if(m) return { int: m[1].replace(/\D/g, ''), dec: m[2], pending: false };
+  if(/\.$/.test(s)) return { int: s.replace(/\D/g, ''), dec: '', pending: true };
+  return { int: s.replace(/\D/g, ''), dec: '', pending: false };
+}
+function fmtMoneyDisplay(raw, isTrieu){
+  var p = splitMoneyParts(raw, isTrieu);
+  if(!p || !p.int) return '';
+  var int = p.int.replace(/^0+(?=\d)/, '');
+  if(!int) int = '0';
+  var out = groupIntStr(int);
+  if(isTrieu && (p.dec || p.pending)) out += ',' + p.dec;
+  return out;
+}
+function moneyFmt(el){
+  if(!el) return;
+  var isTrieu = el.getAttribute('data-money') === 'trieu';
+  var raw = el.value, caret = 0;
+  try { caret = el.selectionStart || 0; } catch(e){}
+  var atEnd = caret >= raw.length;
+  var digitsBefore = raw.slice(0, caret).replace(/\D/g, '').length;
+  var disp = fmtMoneyDisplay(raw, isTrieu);
+  el.value = disp;
+  var pos;
+  if(atEnd) pos = disp.length;
+  else {
+    pos = 0; var seen = 0;
+    while(pos < disp.length && seen < digitsBefore){ if(/\d/.test(disp[pos])) seen++; pos++; }
+  }
+  try { el.setSelectionRange(pos, pos); } catch(e){}
+}
+document.addEventListener('input', function(ev){
+  var el = ev.target;
+  if(el && el.classList && el.classList.contains('money')) moneyFmt(el);
+}, true);
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function today(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function curMonth(){ return today().slice(0,7); }
@@ -78,7 +132,18 @@ function toast(msg){ var old=document.querySelector('.toast'); if(old) old.remov
 function val(id){ var e=document.getElementById(id); return e? e.value.trim() : ''; }
 function byId(arr,id){ for(var i=0;i<arr.length;i++) if(arr[i].id===id) return arr[i]; return null; }
 function fld(label, inputHtml, required){ return '<div><label class="fl">'+esc(label)+(required?' <b>*</b>':'')+'</label>'+inputHtml+'</div>'; }
-function inp(id, value, type, extra){ return '<input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'" '+(extra||'')+'>'; }
+function inp(id, value, type, extra){
+  /* Ô tiền: type 'money' (vnđ) / 'money-trieu' (triệu) render thành
+     input text có class money + data-money, giá trị nạp sẵn đã được
+     định dạng phân cách nghìn; gõ được moneyFmt() định dạng trực tiếp
+     qua listener 'input' (capture) ở trên. */
+  if(type === 'money' || type === 'money-trieu'){
+    var isTr = type === 'money-trieu';
+    var disp = (value === '' || value == null) ? '' : fmtMoneyDisplay(String(value), isTr);
+    return '<input id="'+id+'" type="text" inputmode="'+(isTr ? 'decimal' : 'numeric')+'" class="money" data-money="'+(isTr ? 'trieu' : 'vnd')+'" value="'+esc(disp)+'" '+(extra||'')+'>';
+  }
+  return '<input id="'+id+'" type="'+(type||'text')+'" value="'+esc(value==null?'':value)+'" '+(extra||'')+'>';
+}
 function sel(id, options, current, extra){
   var h='<select id="'+id+'"'+(extra ? ' '+extra : '')+'>';
   options.forEach(function(o){ var v=Array.isArray(o)?o[0]:o, t=Array.isArray(o)?o[1]:o;
@@ -417,6 +482,26 @@ function nextPayDate(lc){
   if(c2 < today()){ m++; if(m>12){ m=1; y++; } c2 = y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(lc.payDay,28)).padStart(2,'0'); }
   return c2;
 }
+/* "Quản lý thay chủ" ở form nhà: khi chọn thì phần Hợp Đồng bị ẩn +
+   vô hiệu hóa (không cần nhập thông tin hợp đồng nữa), phần Chủ Nhà
+   không còn dấu * bắt buộc; bỏ chọn thì trở về đúng hành vi cũ.
+   Trạng thái lưu ở houses.managedForOwner, mở form Sửa nhà khôi phục
+   đúng trạng thái; khi chọn và lưu thì KHÔNG tạo/cập nhật hợp đồng
+   chủ nhà (hợp đồng đã có sẵn vẫn giữ nguyên, không bị xóa). */
+function toggleManaged(){
+  var m = isChk('lc_managed');
+  var sec = document.getElementById('lc_sec');
+  if(sec){
+    var grid = sec.querySelector('.fgrid');
+    if(grid){
+      grid.style.display = m ? 'none' : '';
+      grid.querySelectorAll('input,select,textarea').forEach(function(e){ e.disabled = m; });
+    }
+  }
+  var ll = document.getElementById('ll_sec');
+  if(ll) ll.classList.toggle('no-req', m);
+}
+
 /* Cập nhật trực tiếp trong form nhà (phần Hợp Đồng) khi người dùng gõ:
    - "Tổng số tiền thanh toán" (ô chỉ đọc) = Tiền thuê x Số tháng.
    - "Ngày thanh toán kỳ đầu" (lc_firstpay) là ô NGƯỜI DÙNG NHẬP (Đợt 9):
@@ -899,7 +984,7 @@ function viewHouseForm(p){
     fld('Loại hình kinh doanh', sel('h_business', HOUSE_BUSINESS_TYPES, hs?hs.businessType:'Phòng trọ'), true) +
     '</div>' + fld('Thêm mô tả', '<textarea id="h_desc">'+esc(desc)+'</textarea>') + '</div>' +
     /* --- Phần 2: Chủ Nhà --- */
-    '<div class="form-sec"><h3 class="sec">Chủ Nhà</h3>' +
+    '<div class="form-sec" id="ll_sec"><h3 class="sec">Chủ Nhà</h3>' +
     fld('Chọn chủ nhà có sẵn (chọn là tự điền hồ sơ bên dưới, sửa được; để trống = tạo chủ nhà mới)', '<select id="h_landlordSel" onchange="houseLandlordPick()">' +
       '<option value="">-- Nhập chủ nhà mới --</option>' + db.landlords.map(function(l){
         return '<option value="'+l.id+'"'+(ll && ll.id===l.id ? ' selected' : '')+'>'+esc(l.name + ' — ' + (l.phone||''))+'</option>'; }).join('') + '</select>') +
@@ -926,9 +1011,10 @@ function viewHouseForm(p){
        Ô "Thời gian thanh toán" (lc_paydate/payDate, thêm ở đợt 8) đã BỎ
        khỏi form theo yêu cầu — form không gửi payDate nữa, giá trị cũ trong
        DB được giữ nguyên (API update dùng exclude_unset). */
-    '<div class="form-sec"><h3 class="sec">Hợp Đồng</h3><div class="fgrid">' +
-    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number', 'oninput="lcFormRefresh()"'), true) +
-    fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number'), true) +
+    '<div class="form-sec" id="lc_sec"><h3 class="sec">Hợp Đồng</h3>' +
+    '<div style="margin:2px 0 10px"><label class="chk"><input type="checkbox" id="lc_managed"'+(hs && hs.managedForOwner ? ' checked' : '')+' onchange="toggleManaged()"> Quản lý thay chủ</label></div><div class="fgrid">' +
+    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'money', 'oninput="lcFormRefresh()"'), true) +
+    fld('Cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'money'), true) +
     fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date', 'onchange="lcFormRefresh()"'), true) +
     fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date'), true) +
     fld('Số tháng thanh toán 1 lần', inp('lc_paymonths', lc?lc.payMonths:1, 'number', 'oninput="lcFormRefresh()" onchange="lcFormRefresh()"'), true) +
@@ -963,11 +1049,17 @@ function viewHouseForm(p){
   /* Nạp sẵn phần Hợp Đồng: ô Tổng tiền TT (chỉ đọc) + gợi ý Ngày TT kỳ đầu
      nếu ô đang trống (không ghi đè ngày đã lưu/đã nạp ở trên) */
   lcFormRefresh();
+  /* Khôi phục trạng thái "Quản lý thay chủ" (nhà đã lưu cờ bật thì phần
+     Hợp Đồng vẫn ẩn khi mở form Sửa) */
+  toggleManaged();
   /* Chế độ sửa: nạp sẵn các tài sản chủ nhà hiện có của nhà thành từng dòng */
   llAssets.forEach(function(a){ addHouseAssetRow(a.type, a.status, a.note || '', a.id, a.imageUrl || ''); });
 }
 function saveHouse(id){
   var landlordSel = val('h_landlordSel');
+  /* "Quản lý thay chủ": phần Hợp Đồng bị ẩn/vô hiệu hóa thì không tạo/
+     cập nhật hợp đồng chủ nhà (hợp đồng đã có vẫn giữ nguyên) */
+  var managed = isChk('lc_managed');
   /* Đợt 6 (mục 4): hồ sơ chủ nhà trong form (kèm 2 ảnh CMND đã tải lên) —
      chủ nhà có sẵn thì CẬP NHẬT lại hồ sơ (đúng cam kết "chọn là tự điền,
      sửa được" của nhãn select), chưa chọn thì tạo mới khi có họ tên */
@@ -1004,6 +1096,7 @@ function saveHouse(id){
       /* Đợt 5: "Hình thức cho thuê" đã bỏ khỏi form — giữ nguyên giá trị cũ trong DB */
       rentalMode: oldHouse ? (oldHouse.rentalMode || 'Bao phòng') : 'Bao phòng',
       description: fullDesc, landlordId: landlordId || null,
+      managedForOwner: managed,
       /* Đợt 7: tọa độ bản đồ từ 2 ô Vĩ độ/Kinh độ (không hợp lệ -> null) */
       latitude: coords ? coords.lat : null,
       longitude: coords ? coords.lng : null,
@@ -1011,9 +1104,11 @@ function saveHouse(id){
       redBookImages: (window._rbImages || []).slice() };
     var afterHouse = function(houseId){
       var jobs = [];
-      // Hợp đồng chủ nhà (hễ phần Hợp Đồng có nhập tiền thuê thì tạo/cập nhật)
+      // Hợp đồng chủ nhà (hễ phần Hợp Đồng có nhập tiền thuê thì tạo/cập nhật;
+      // riêng khi "Quản lý thay chủ" được chọn thì bỏ qua — không tạo mới,
+      // không cập nhật, và tuyệt đối không xóa hợp đồng đã có sẵn)
       var rent = num(val('lc_rent'));
-      if(rent){
+      if(rent && !managed){
         /* Form KHÔNG gửi payDate nữa (ô "Thời gian thanh toán" đã bỏ khỏi
            form): API update dùng exclude_unset nên payDate đã lưu trong DB
            của HĐ cũ được giữ nguyên, không bị xóa trắng. payFromDay/payToDay
@@ -1143,7 +1238,7 @@ function openPayUtility(id){
   var h = '<h3 style="margin-top:0">Thanh toán '+label+' — '+esc(hs ? (hs.name || hs.address) : '')+'</h3>' +
     '<p style="margin:6px 0">Mã '+label+': <b>'+esc(u.customerCode)+'</b> · Thời gian: <b>'+esc(fmtUtilMonth(u.month))+'</b></p>' +
     '<div><label class="fl">Số tiền thanh toán (vnđ) <b>*</b></label>' +
-    inp('pay_amount', u.amount ? u.amount : '', 'number', 'placeholder="Nhập số tiền thanh toán..."') + '</div>' +
+    inp('pay_amount', u.amount ? u.amount : '', 'money', 'placeholder="Nhập số tiền thanh toán..."') + '</div>' +
     '<p class="err-msg" id="pay_err" style="display:none;margin-top:8px"></p>' +
     '<div class="btnrow"><button class="btn green" type="button" onclick="confirmPayUtility(\''+u.id+'\')">Xác nhận thanh toán</button>' +
     '<button class="btn gray" type="button" onclick="closeModal()">Hủy</button></div>';
@@ -1174,7 +1269,7 @@ function viewUtilityForm(p){
     fld('Tài khoản', inp('u_username', u?u.username:'')) +
     fld('Mật khẩu', inp('u_password', u?u.password:'')) +
     fld('Tháng', inp('u_month', u?u.month:curMonth(), 'month')) +
-    fld('Tiền thanh toán (vnđ)', inp('u_amount', u?u.amount:0, 'number')) +
+    fld('Tiền thanh toán (vnđ)', inp('u_amount', u?u.amount:0, 'money')) +
     fld('Trạng thái', sel('u_status', [['unpaid','Chưa thanh toán'],['paid','Đã thanh toán']], u?u.status:'unpaid')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
     '<button class="btn gray" type="button" onclick="go(\'houseUtilities\')">Quay lại</button></div></form>';
@@ -1203,8 +1298,8 @@ VIEWS.utilityForm = function(p){
     h += '<form class="form-card" onsubmit="event.preventDefault();saveLandlordMeter()"><div class="fgrid">' +
       fld('Nhà', selObj('lm_house', db.houses, '', function(x){ return (x.name||x.address); }), true) +
       fld('Ngày chốt', inp('lm_date', today(), 'date')) +
-      fld('Tiền điện (vnđ)', inp('lm_dien', 0, 'number')) + fld('Tiền nước (vnđ)', inp('lm_nuoc', 0, 'number')) +
-      fld('Tiền internet (vnđ)', inp('lm_internet', 0, 'number')) + fld('Vệ sinh (vnđ)', inp('lm_vesinh', 0, 'number')) +
+      fld('Tiền điện (vnđ)', inp('lm_dien', 0, 'money')) + fld('Tiền nước (vnđ)', inp('lm_nuoc', 0, 'money')) +
+      fld('Tiền internet (vnđ)', inp('lm_internet', 0, 'money')) + fld('Vệ sinh (vnđ)', inp('lm_vesinh', 0, 'money')) +
       '</div><div class="btnrow"><button class="btn green" type="submit">Lưu (tổng tự tính)</button>' +
       '<button class="btn gray" type="button" onclick="go(\'houseUtilities\')">Quay lại</button></div></form>';
     setContent(h); return;
@@ -1246,8 +1341,8 @@ function viewRooms(){
     '<div class="fg"><label>Nhà</label>'+selObj('rf_house', db.houses, f.houseId||'', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
     '<div class="fg"><label>Tên phòng</label>'+inp('rf_q', f.q||'', 'text', 'placeholder="Tìm..."')+'</div>' +
     '<div class="fg"><label>Loại phòng</label>'+sel('rf_type', [['','Tất cả']].concat(ROOM_TYPES.map(function(x){return [x,x];})), f.type||'')+'</div>' +
-    '<div class="fg"><label>Giá từ</label>'+inp('rf_pmin', f.pmin||'', 'number')+'</div>' +
-    '<div class="fg"><label>Giá đến</label>'+inp('rf_pmax', f.pmax||'', 'number')+'</div>' +
+    '<div class="fg"><label>Giá từ</label>'+inp('rf_pmin', f.pmin||'', 'money')+'</div>' +
+    '<div class="fg"><label>Giá đến</label>'+inp('rf_pmax', f.pmax||'', 'money')+'</div>' +
     '<div class="fg"><label>Số người tối đa ≥</label>'+inp('rf_ppl', f.ppl||'', 'number')+'</div>' +
     '<div class="fg"><label>Tiện ích</label><span>' +
       ['Điều hòa','Nóng lạnh','Máy giặt','Tivi','Ban công','Cửa sổ'].map(function(a){ return chk('rf_am_'+a, a, (f.amenities||[]).indexOf(a)>=0); }).join('') +
@@ -1362,7 +1457,12 @@ function svPriceOf(v, dft){ return typeof v === 'number' ? v : (v && v.price !==
 function svUnitOf(v, dft){ return (v && typeof v === 'object' && v.unit) ? v.unit : dft; }
 /* Đợt 5 — Form phòng: Giá phòng nhập theo TRIỆU (lưu = ×1.000.000) */
 function trieuVal(vnd){ return Math.round(((Number(vnd) || 0) / 1000000) * 100) / 100; }
-function numTrieu(v){ var x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isNaN(x) ? 0 : Math.round(x * 1000000); }
+function numTrieu(v){
+  var p = splitMoneyParts(v, true);
+  if(!p) return 0;
+  var x = parseFloat((p.int || '0') + (p.dec ? '.' + p.dec : ''));
+  return isNaN(x) ? 0 : Math.round(x * 1000000);
+}
 /* 7 loại phòng của ảnh thiết kế form phòng (2 giá trị 'Khép kín'/'Không khép kín'
    trong ROOM_TYPES là kiểu vệ sinh, không phải loại phòng) */
 var ROOM_TYPES_FORM = ['Chung cư mini','Homestay','Phòng trọ','Phòng đơn','Studio','1 ngủ 1 khách','2 ngủ 1 khách'];
@@ -1390,7 +1490,7 @@ function renderRoomSvRows(){
   wrap.innerHTML = window._rsvRows.map(function(rw, i){
     if(rw.editing){
       return '<div class="fgrid" style="align-items:end"><div>'+fld('Tên dịch vụ', inp('rsv_name_'+i, rw.name))+'</div>' +
-        '<div>'+fld('Giá (vnđ)', inp('rsv_price_'+i, rw.price, 'number'))+'</div>' +
+        '<div>'+fld('Giá (vnđ)', inp('rsv_price_'+i, rw.price, 'money'))+'</div>' +
         '<div>'+fld('Đơn vị', sel('rsv_unit_'+i, SV_UNITS, rw.unit))+'</div>' +
         '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm green" onclick="doneRoomSvRow('+i+')">Xong</button></div></div>';
     }
@@ -1493,8 +1593,8 @@ function viewRoomForm(p){
     fld('Vệ sinh', sel('r_toilet', ['Khép kín','Riêng','Chung'], r?r.toilet:'Khép kín')) +
     fld('Số phòng', inp('r_subrooms', r?r.subRooms:0, 'number')) +
     fld('Số người tối đa (người)', inp('r_max', r?r.maxPeople:0, 'number')) +
-    fld('Giá phòng (triệu vnđ)', inp('r_price', r ? trieuVal(r.price) : '', 'number', 'step="0.05" min="0" placeholder="VD: 4.5"'), true) +
-    fld('Cọc tối thiểu (vnđ)', inp('r_minDep', r?r.minDeposit:0, 'number')) +
+    fld('Giá phòng (triệu vnđ)', inp('r_price', r ? trieuVal(r.price) : '', 'money-trieu', 'placeholder="VD: 4,5"'), true) +
+    fld('Cọc tối thiểu (vnđ)', inp('r_minDep', r?r.minDeposit:0, 'money')) +
     fld('Số tháng thanh toán 1 lần', inp('r_payMonths', r?r.payMonths:1, 'number')) +
     fld('Thanh toán từ ngày', inp('r_from', r?r.payFromDay:1, 'number')) +
     fld('đến ngày', inp('r_to', r?r.payToDay:3, 'number')) +
@@ -1502,7 +1602,7 @@ function viewRoomForm(p){
     '<h3 class="sec">Dịch Vụ</h3><div id="r_sv_list"></div>' +
     '<div class="fgrid" style="margin-top:10px;align-items:end">' +
     '<div>'+fld('Thêm dịch vụ — chọn từ danh mục', sel('r_sv_new_name', [['','-- Chọn dịch vụ --']].concat(catalogNames.map(function(n){ return [n,n]; })), ''))+'</div>' +
-    '<div>'+fld('Giá (vnđ)', inp('r_sv_new_price', 0, 'number'))+'</div>' +
+    '<div>'+fld('Giá (vnđ)', inp('r_sv_new_price', 0, 'money'))+'</div>' +
     '<div>'+fld('Đơn vị', sel('r_sv_new_unit', SV_UNITS, 'phong'))+'</div>' +
     '<div><label class="fl">&nbsp;</label><button type="button" class="btn sm green" onclick="addRoomSvFromCatalog()">Thêm dịch vụ</button></div></div>' +
     '<h3 class="sec">Tiện ích</h3><div>' + AMENITIES.map(function(a){
@@ -1669,7 +1769,7 @@ function depHouseChange(){
 function depFillFromRoom(force){
   var room = byId(db.rooms, val('dp_room')); if(!room) return;
   var sv = room.services || {};
-  function set(id, v){ var e = document.getElementById(id); if(e && (force || e.value === '' || e.value === '0')) e.value = v; }
+  function set(id, v){ var e = document.getElementById(id); if(e && (force || e.value === '' || e.value === '0')){ e.value = v; if(e.classList.contains('money')) moneyFmt(e); } }
   set('dp_rent', room.price || 0);
   set('dp_price', room.price || 0);
   set('dp_mindep', room.minDeposit || 0);
@@ -1708,7 +1808,7 @@ function viewDepositForm(p){
     /* --- Thông tin cọc giữ phòng --- */
     '<div class="form-sec"><h3 class="sec">Thông tin cọc giữ phòng</h3><div class="fgrid">' +
     fld('Mã HĐ cọc (để trống = tự sinh)', inp('dp_code', d?d.code:'')) +
-    fld('Số tiền cọc giữ phòng (vnđ)', inp('dp_amount', d?d.amount:0, 'number'), true) +
+    fld('Số tiền cọc giữ phòng (vnđ)', inp('dp_amount', d?d.amount:0, 'money'), true) +
     fld('Thời gian trống phòng (ngày)', inp('dp_vacant', d?d.vacantDays:0, 'number')) +
     fld('Thời gian thuê từ ngày (ngày vào)', inp('dp_in', d?d.moveInDate:'', 'date'), true) +
     fld('đến ngày (ngày ra)', inp('dp_out', d?d.moveOutDate:'', 'date'), true) +
@@ -1718,9 +1818,9 @@ function viewDepositForm(p){
     '</div>' + fld('Ghi chú', '<textarea id="dp_note">'+esc(d?d.note:'')+'</textarea>') + '</div>' +
     /* --- Thông tin phòng: tự điền từ phòng, cho sửa --- */
     '<div class="form-sec"><h3 class="sec">Thông tin phòng</h3><div class="fgrid">' +
-    fld('Giá phòng (vnđ)', inp('dp_price', d ? (room?room.price:0) : (room?room.price:0), 'number')) +
-    fld('Giá thuê (vnđ)', inp('dp_rent', d?d.rentPrice:(room?room.price:0), 'number')) +
-    fld('Cọc (vnđ)', inp('dp_mindep', room?room.minDeposit:0, 'number')) +
+    fld('Giá phòng (vnđ)', inp('dp_price', d ? (room?room.price:0) : (room?room.price:0), 'money')) +
+    fld('Giá thuê (vnđ)', inp('dp_rent', d?d.rentPrice:(room?room.price:0), 'money')) +
+    fld('Cọc (vnđ)', inp('dp_mindep', room?room.minDeposit:0, 'money')) +
     fld('Số người ở tối đa', inp('dp_max', room?room.maxPeople:0, 'number')) +
     fld('Số tháng thanh toán 1 lần', inp('dp_paymonths', d?d.payMonths:1, 'number')) +
     fld('Thời gian thanh toán từ ngày', inp('dp_from', d?d.payDayFrom:1, 'number')) +
@@ -1728,16 +1828,16 @@ function viewDepositForm(p){
     '</div></div>' +
     /* --- Dịch Vụ --- */
     '<div class="form-sec"><h3 class="sec">Dịch Vụ</h3><div class="fgrid">' +
-    fld('Giá điện (vnđ)', inp('dp_sv_dien', scv('dien','price',3000), 'number')) +
+    fld('Giá điện (vnđ)', inp('dp_sv_dien', scv('dien','price',3000), 'money')) +
     fld('Cách tính điện', sel('dp_sv_dien_unit', [['so','số'],['nguoi','người'],['phong','phòng']], scv('dien','unit','so'))) +
-    fld('Giá nước (vnđ)', inp('dp_sv_nuoc', scv('nuoc','price',80000), 'number')) +
+    fld('Giá nước (vnđ)', inp('dp_sv_nuoc', scv('nuoc','price',80000), 'money')) +
     fld('Cách tính nước', sel('dp_sv_nuoc_unit', [['nguoi','người'],['so','số'],['phong','phòng']], scv('nuoc','unit','nguoi'))) +
     fld('Xe máy — số lượng', inp('dp_xm_n', scv('xeMay','count',0), 'number')) +
-    fld('Xe máy — phí 1 xe (vnđ)', inp('dp_xm_f', scv('xeMay','fee',30000), 'number')) +
+    fld('Xe máy — phí 1 xe (vnđ)', inp('dp_xm_f', scv('xeMay','fee',30000), 'money')) +
     fld('Ô tô — số lượng', inp('dp_ot_n', scv('oTo','count',0), 'number')) +
-    fld('Ô tô — phí 1 xe (vnđ)', inp('dp_ot_f', scv('oTo','fee',100000), 'number')) +
+    fld('Ô tô — phí 1 xe (vnđ)', inp('dp_ot_f', scv('oTo','fee',100000), 'money')) +
     fld('Xe đạp — số lượng', inp('dp_xd_n', scv('xeDap','count',0), 'number')) +
-    fld('Xe đạp — phí 1 xe (vnđ)', inp('dp_xd_f', scv('xeDap','fee',10000), 'number')) +
+    fld('Xe đạp — phí 1 xe (vnđ)', inp('dp_xd_f', scv('xeDap','fee',10000), 'money')) +
     '</div></div>' +
     '<div class="btnrow"><button class="btn green" type="submit">'+(d ? 'Lưu thay đổi' : 'Cọc giữ phòng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'deposits\')">Quay lại</button></div></form>';
@@ -1834,7 +1934,7 @@ function contractHouseChange(){
 function contractRoomChange(){
   var room = byId(db.rooms, val('c_room')); if(!room) return;
   var sv = room.services || {};
-  function set(id, v){ var e = document.getElementById(id); if(e) e.value = v; }
+  function set(id, v){ var e = document.getElementById(id); if(e){ e.value = v; if(e.classList.contains('money')) moneyFmt(e); } }
   set('c_price', room.price || 0);
   set('c_deposit', room.minDeposit || 0);
   set('c_people', room.maxPeople || 1);
@@ -1867,21 +1967,21 @@ function viewContractForm(p){
     '<h3 class="sec" id="c_room_title">Phòng ' + esc(room ? room.name : '') + '</h3>' +
     '<p style="color:#616161;margin-bottom:6px">Giá phòng, cọc, số người và dịch vụ tự điền từ thông tin phòng — có thể chỉnh lại trước khi lưu.</p>' +
     '<div class="fgrid">' +
-    fld('Giá phòng (vnđ)', inp('c_price', ct?ct.price:(room?room.price:0), 'number'), true) +
-    fld('Cọc (vnđ)', inp('c_deposit', ct?ct.deposit:(room?room.minDeposit:0), 'number')) +
+    fld('Giá phòng (vnđ)', inp('c_price', ct?ct.price:(room?room.price:0), 'money'), true) +
+    fld('Cọc (vnđ)', inp('c_deposit', ct?ct.deposit:(room?room.minDeposit:0), 'money')) +
     fld('Số người ở', inp('c_people', ct?ct.people:(room?room.maxPeople:1), 'number')) +
     '</div>' +
     '<div class="form-sec"><h3 class="sec">Dịch Vụ (cấu hình cho hợp đồng — hóa đơn tháng tính theo cấu hình này)</h3><div class="fgrid">' +
-    fld('Giá điện (vnđ)', inp('c_dien', svNum(sv.dien, 3000), 'number')) +
+    fld('Giá điện (vnđ)', inp('c_dien', svNum(sv.dien, 3000), 'money')) +
     fld('Cách tính điện', sel('c_dien_unit', [['so','số'],['nguoi','người'],['phong','phòng']], svUnit(sv.dien, 'so'))) +
-    fld('Giá nước (vnđ)', inp('c_nuoc', svNum(sv.nuoc, 80000), 'number')) +
+    fld('Giá nước (vnđ)', inp('c_nuoc', svNum(sv.nuoc, 80000), 'money')) +
     fld('Cách tính nước', sel('c_nuoc_unit', [['nguoi','người'],['so','số'],['phong','phòng']], svUnit(sv.nuoc, 'nguoi'))) +
-    fld('Điện chung (vnđ/người)', inp('c_dc', svNum(sv.dienChung, 30000), 'number')) +
-    fld('Vệ sinh (vnđ/người)', inp('c_vs', svNum(sv.vesinh, 20000), 'number')) +
-    fld('Internet (vnđ/người)', inp('c_net', svNum(sv.internet, 50000), 'number')) +
-    fld('Xe máy — số lượng', inp('c_xm_n', (sv.xeMay||{}).count !== undefined ? sv.xeMay.count : 1, 'number')) + fld('Xe máy — phí 1 xe', inp('c_xm_f', (sv.xeMay||{}).fee !== undefined ? sv.xeMay.fee : 30000, 'number')) +
-    fld('Ô tô — số lượng', inp('c_ot_n', (sv.oTo||{}).count || 0, 'number')) + fld('Ô tô — phí 1 xe', inp('c_ot_f', (sv.oTo||{}).fee !== undefined ? sv.oTo.fee : 100000, 'number')) +
-    fld('Xe đạp — số lượng', inp('c_xd_n', (sv.xeDap||{}).count || 0, 'number')) + fld('Xe đạp — phí 1 xe', inp('c_xd_f', (sv.xeDap||{}).fee !== undefined ? sv.xeDap.fee : 10000, 'number')) +
+    fld('Điện chung (vnđ/người)', inp('c_dc', svNum(sv.dienChung, 30000), 'money')) +
+    fld('Vệ sinh (vnđ/người)', inp('c_vs', svNum(sv.vesinh, 20000), 'money')) +
+    fld('Internet (vnđ/người)', inp('c_net', svNum(sv.internet, 50000), 'money')) +
+    fld('Xe máy — số lượng', inp('c_xm_n', (sv.xeMay||{}).count !== undefined ? sv.xeMay.count : 1, 'number')) + fld('Xe máy — phí 1 xe', inp('c_xm_f', (sv.xeMay||{}).fee !== undefined ? sv.xeMay.fee : 30000, 'money')) +
+    fld('Ô tô — số lượng', inp('c_ot_n', (sv.oTo||{}).count || 0, 'number')) + fld('Ô tô — phí 1 xe', inp('c_ot_f', (sv.oTo||{}).fee !== undefined ? sv.oTo.fee : 100000, 'money')) +
+    fld('Xe đạp — số lượng', inp('c_xd_n', (sv.xeDap||{}).count || 0, 'number')) + fld('Xe đạp — phí 1 xe', inp('c_xd_f', (sv.xeDap||{}).fee !== undefined ? sv.xeDap.fee : 10000, 'money')) +
     '</div></div>' +
     '<div class="form-sec"><h3 class="sec">Thời gian thuê & thanh toán</h3><div class="fgrid">' +
     fld('Ngày vào (thời gian thuê từ)', inp('c_start', ct?ct.startDate:today(), 'date'), true) +
@@ -1956,7 +2056,7 @@ function viewLiquidate(p){
     fld('Ngày thanh lý', inp('lq_date', today(), 'date'), true) +
     fld('Điện — chỉ số cuối (trước: '+(lastD?lastD.current:0)+')', inp('lq_dien', lastD?lastD.current:'', 'number')) +
     fld('Nước — chỉ số cuối (trước: '+(lastN?lastN.current:0)+')', inp('lq_nuoc', lastN?lastN.current:'', 'number')) +
-    fld('Tiền phòng đã trả thừa (vnđ)', inp('lq_prepaid', 0, 'number')) +
+    fld('Tiền phòng đã trả thừa (vnđ)', inp('lq_prepaid', 0, 'money')) +
     '</div><label class="chk"><input type="checkbox" id="lq_refund"> Hoàn tiền phòng thừa cho khách</label>' +
     '<div class="btnrow"><button class="btn" type="submit">Tính thử (bước 2)</button>' +
     '<button class="btn gray" type="button" onclick="go(\'contracts\')">Quay lại</button></div></form><div id="lq_result"></div>';
@@ -2007,7 +2107,7 @@ function landlordContractsHtml(){
   }).join(''), 'Chưa có chủ nhà');
   h += '<h3 class="sec">Thanh toán tiền nhà</h3><form class="filters" onsubmit="event.preventDefault();saveHousePayment()">' +
     '<div class="fg"><label>Nhà</label>'+selObj('hp_house', db.houses, '', function(x){ return (x.name||x.address); })+'</div>' +
-    '<div class="fg"><label>Số tiền</label>'+inp('hp_amount', '', 'number')+'</div>' +
+    '<div class="fg"><label>Số tiền</label>'+inp('hp_amount', '', 'money')+'</div>' +
     '<div class="fg"><label>Ngày</label>'+inp('hp_date', today(), 'date')+'</div>' +
     '<button class="btn green">Ghi thanh toán</button></form>';
   h += tableHtml(['STT','Nhà','Chủ nhà','Số tiền','Ngày','Trạng thái'], db.housePayments.map(function(p2, i){
@@ -2032,8 +2132,8 @@ function viewLandlordContractForm(p){
     fld('Chủ nhà', selObj('lc_landlord', db.landlords, lc?lc.landlordId:'', function(l){ return l.name + ' — ' + l.phone; }), true) +
     fld('Nhà', selObj('lc_house', db.houses, lc?lc.houseId:'', function(x){ return (x.name||x.address); }), true) +
     fld('Mã HĐ (để trống = tự sinh)', inp('lc_code', lc?lc.code:'')) +
-    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'number')) +
-    fld('Tiền cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'number')) +
+    fld('Tiền thuê (vnđ)', inp('lc_rent', lc?lc.rentPrice:0, 'money')) +
+    fld('Tiền cọc (vnđ)', inp('lc_deposit', lc?lc.deposit:0, 'money')) +
     fld('Ngày bắt đầu', inp('lc_start', lc?lc.startDate:'', 'date')) +
     fld('Ngày kết thúc', inp('lc_end', lc?lc.endDate:'', 'date')) +
     fld('Ngày thanh toán hàng tháng', inp('lc_payday', lc?lc.payDay:5, 'number')) +
@@ -2213,7 +2313,7 @@ function viewInvoiceDetail(p){
     '<div class="kv"><span>Còn lại</span><span>'+fmt(rem)+'</span></div>';
   if(rem > 0){
     h += '<h3 class="sec">Ghi thanh toán</h3><div class="fgrid">' +
-      fld('Số tiền', inp('pay_amount', rem, 'number'), true) +
+      fld('Số tiền', inp('pay_amount', rem, 'money'), true) +
       fld('Ngày', inp('pay_date', today(), 'date')) +
       fld('Người nhận', inp('pay_receiver', currentUser ? currentUser.name : '')) +
       fld('Ghi chú', inp('pay_note', '')) + '</div>' +
@@ -2245,14 +2345,14 @@ function viewInvoiceEdit(p){
   var inv = byId(db.invoices, p.id); if(!inv){ go('invoices'); return; }
   var h = pageTitle('Chỉnh sửa hóa đơn ' + (inv.code || ''));
   h += '<form class="form-card" onsubmit="event.preventDefault();saveInvoiceEdit(\''+inv.id+'\')"><div class="fgrid">' +
-    fld('Tiền phòng (vnđ)', inp('ie_roomfee', inv.roomFee, 'number')) +
-    fld('Giảm giá (vnđ)', inp('ie_discount', inv.discount, 'number')) +
+    fld('Tiền phòng (vnđ)', inp('ie_roomfee', inv.roomFee, 'money')) +
+    fld('Giảm giá (vnđ)', inp('ie_discount', inv.discount, 'money')) +
     fld('Ngày tạo', inp('ie_date', inv.createdDate || '', 'date')) +
     fld('Lý do (hóa đơn đặc biệt)', inp('ie_reason', inv.reason || '')) + '</div>' +
     '<h3 class="sec">Dòng dịch vụ (Thành tiền = Đơn giá × Số lượng, tự tính khi lưu)</h3>' +
     '<div id="ie_lines">' + (inv.lines||[]).map(function(l, i){
       return '<div class="fgrid"><div>'+fld('Khoản thu', inp('ie_l_label_'+i, l.label))+'</div>' +
-        '<div>'+fld('Đơn giá', inp('ie_l_price_'+i, l.unitPrice, 'number'))+'</div>' +
+        '<div>'+fld('Đơn giá', inp('ie_l_price_'+i, l.unitPrice, 'money'))+'</div>' +
         '<div>'+fld('Số lượng', inp('ie_l_qty_'+i, l.qty, 'number'))+'</div>' +
         '<div>'+fld('Đơn vị', inp('ie_l_unit_'+i, l.unit))+'</div></div>';
     }).join('') + '</div>' +
@@ -2549,7 +2649,7 @@ function viewOtherForm(){
   h += invTabsHtml('specialInvoices');
   h += '<form class="form-card" onsubmit="event.preventDefault();"><div class="fgrid">' +
     fld('Lý Do thu', inp('of_reason', ''), true) +
-    fld('Số tiền thu (vnđ)', inp('of_amount', '', 'text', 'inputmode="numeric" placeholder="VD: 200000"'), true) +
+    fld('Số tiền thu (vnđ)', inp('of_amount', '', 'money', 'placeholder="VD: 200000"'), true) +
     '</div>' +
     fld('Ghi chú', '<textarea id="of_note"></textarea>') +
     '<h3 class="sec">Chọn người nhận hóa đơn</h3>' +
@@ -2775,7 +2875,7 @@ function viewReceiptForm(p){
   h += finTabsHtml('thu');
   h += '<form class="form-card" onsubmit="event.preventDefault();saveReceipt(\''+(r?r.id:'')+'\')"><div class="fgrid">' +
     fld('Khoản thu', inp('rc_title', r?r.title:''), true) +
-    fld('Số tiền thu (vnđ)', inp('rc_amount', r?r.amount:'', 'text', 'inputmode="numeric" placeholder="VD: 1500000"'), true) +
+    fld('Số tiền thu (vnđ)', inp('rc_amount', r?r.amount:'', 'money', 'placeholder="VD: 1500000"'), true) +
     fld('Người thu', inp('rc_collector', r?r.collector:(currentUser?currentUser.name:''))) +
     fld('Ngày tạo', inp('rc_created', r?r.createdDate:today(), 'date')) +
     fld('Ngày thu', inp('rc_collect', r?r.collectDate:today(), 'date')) +
@@ -2814,7 +2914,7 @@ function viewExpenseForm(p){
   h += finTabsHtml('chi');
   h += '<form class="form-card" onsubmit="event.preventDefault();saveExpense(\''+(e?e.id:'')+'\')"><div class="fgrid">' +
     fld('Khoản chi', inp('ex_title', e?e.title:''), true) +
-    fld('Số tiền chi (vnđ)', inp('ex_amount', e?e.amount:'', 'text', 'inputmode="numeric" placeholder="VD: 500000"'), true) +
+    fld('Số tiền chi (vnđ)', inp('ex_amount', e?e.amount:'', 'money', 'placeholder="VD: 500000"'), true) +
     fld('Người chi', inp('ex_spender', e?e.spender:(currentUser?currentUser.name:''))) +
     fld('Ngày tạo', inp('ex_date', e?e.date:today(), 'date')) +
     fld('Ngày chi', inp('ex_paydate', e?e.payDate:today(), 'date')) +
@@ -2875,7 +2975,7 @@ function viewServiceForm(p){
   /* Đợt 5 (mục 19): form dịch vụ đúng 3 trường của ảnh; Giá là ô text */
   h += '<form class="form-card" onsubmit="event.preventDefault();saveService(\''+(s?s.id:'')+'\')"><div class="fgrid">' +
     fld('Tên dịch vụ', inp('sv_name', s?s.name:''), true) +
-    fld('Giá dịch vụ (vnđ)', inp('sv_price', s?s.price:'', 'text', 'inputmode="numeric" placeholder="VD: 3500"')) +
+    fld('Giá dịch vụ (vnđ)', inp('sv_price', s?s.price:'', 'money', 'placeholder="VD: 3500"')) +
     fld('Đơn vị', selObj('sv_unit', db.units, s?s.unitId:'', function(u){ return u.name; }, '-- Chọn đơn vị --')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">'+(s ? 'Lưu thay đổi' : 'Thêm Dịch Vụ')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'services\')">Quay lại</button></div></form>';
@@ -3158,7 +3258,7 @@ function viewVehicleForm(p){
     fld('Loại xe', sel('v_type', ['Xe máy','Ô tô','Xe đạp'], v?v.type:'Xe máy')) +
     fld('Biển số', inp('v_plate', v?v.plate:'')) + fld('Chủ xe', inp('v_owner', v?v.ownerName:'')) +
     fld('Hãng xe', inp('v_brand', v?v.brand:'')) + fld('Màu', inp('v_color', v?v.color:'')) +
-    fld('Phí (vnđ)', inp('v_fee', v?v.fee:0, 'number')) +
+    fld('Phí (vnđ)', inp('v_fee', v?v.fee:0, 'money')) +
     '</div><div class="btnrow"><button class="btn green" type="submit">Lưu</button>' +
     '<button class="btn gray" type="button" onclick="go(\'vehicles\')">Quay lại</button></div></form>';
   setContent(h);
@@ -3171,15 +3271,35 @@ function saveVehicle(id){
   var pr = id ? updateRec('vehicles', id, data) : createRec('vehicles', data);
   pr.then(function(){ toast('Đã lưu xe'); go('vehicles'); }).catch(errToast);
 }
+var assetFilter = {};
+function assetOwnerLabel(a){
+  var ow = a.owner || a.ownerType;  // ownerType: dữ liệu cũ trước đợt 19
+  return ow === 'landlord' ? 'Chủ nhà' : (ow === 'room' ? 'Chủ đầu tư/Quản lý' : (ow || ''));
+}
 function viewAssets(){
+  var f = assetFilter;
+  /* Đợt 20: bộ lọc Nhà / Phòng / Chủ sở hữu + cột Chủ sở hữu trong bảng.
+     Thống kê tính trên danh sách đã lọc để khớp với bảng đang xem. */
+  var list = db.assets.filter(function(a){
+    if(f.houseId && a.houseId !== f.houseId) return false;
+    if(f.roomId && a.roomId !== f.roomId) return false;
+    if(f.owner && (a.owner || a.ownerType) !== f.owner) return false;
+    return true;
+  });
   var counts = {};
-  db.assets.forEach(function(a){ counts[a.status] = (counts[a.status]||0) + 1; });
+  list.forEach(function(a){ counts[a.status] = (counts[a.status]||0) + 1; });
   var h = pageTitle('Tài sản');
   h += '<div class="grid-stats">' + ['Mới','Như mới','Tốt','Cũ','Hỏng','Mất'].map(function(s){
     return '<div class="stat"><div class="num">'+(counts[s]||0)+'</div><div class="lbl">'+s+'</div></div>'; }).join('') + '</div>';
+  h += '<div class="filters">' +
+    '<div class="fg"><label>Nhà</label>'+selObj('asf_house', db.houses, f.houseId||'', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
+    '<div class="fg"><label>Phòng</label>'+selObj('asf_room', db.rooms, f.roomId||'', function(x){ return x.name + ' (' + houseName(x.houseId) + ')'; }, 'Tất cả')+'</div>' +
+    '<div class="fg"><label>Chủ sở hữu</label>'+sel('asf_owner', [['','Tất cả'],['room','Chủ đầu tư/Quản lý'],['landlord','Chủ nhà']], f.owner||'')+'</div>' +
+    '<button class="btn" onclick="assetFilter={houseId:val(\'asf_house\'),roomId:val(\'asf_room\'),owner:val(\'asf_owner\')};viewAssets()">Lọc</button>' +
+    '<button class="btn gray" onclick="assetFilter={};viewAssets()">Bỏ lọc</button></div>';
   h += '<div class="btnrow"><button class="btn green" onclick="go(\'assetForm\')">+ Thêm tài sản</button></div>';
-  h += tableHtml(['STT','Nhà','Phòng','Mã TS','Loại tài sản','Trạng thái','Ảnh',''], db.assets.map(function(a, i){
-    return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(a.houseId))+'</td><td>'+esc(roomName(a.roomId))+'</td><td>'+esc(a.code)+'</td><td><b>'+esc(a.type)+'</b></td><td>'+esc(a.status)+'</td>' +
+  h += tableHtml(['STT','Nhà','Phòng','Mã TS','Loại tài sản','Trạng thái','Chủ sở hữu','Ảnh',''], list.map(function(a, i){
+    return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(a.houseId))+'</td><td>'+esc(roomName(a.roomId))+'</td><td>'+esc(a.code)+'</td><td><b>'+esc(a.type)+'</b></td><td>'+esc(a.status)+'</td><td>'+esc(assetOwnerLabel(a))+'</td>' +
       /* Đợt 6 (mục 2): thumbnail ảnh tài sản đã tải lên */
       '<td>'+(a.imageUrl ? '<img class="asset-thumb-sm" src="'+esc(a.imageUrl)+'" alt="Ảnh tài sản">' : '')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'assetForm\',{id:\''+a.id+'\'})">Cập nhật</button>' +
@@ -3215,6 +3335,7 @@ function saveAsset(id){
   pr.then(function(){ toast('Đã lưu tài sản'); go('assets'); }).catch(errToast);
 }
 var incFilter = {};
+var INC_STATUSES = ['Chưa sửa','Tiếp nhận sự cố','Đang sửa','Đã sửa'];
 function incBadge(s){ return s==='Đã sửa' ? '<span class="badge b-done">Đã sửa</span>' : (s==='Đang sửa' ? '<span class="badge b-fixing">Đang sửa</span>' : (s==='Tiếp nhận sự cố' ? '<span class="badge b-received">Tiếp nhận sự cố</span>' : '<span class="badge b-new">Chưa sửa</span>')); }
 function viewIncidents(){
   var f = incFilter;
@@ -3222,13 +3343,18 @@ function viewIncidents(){
   h += '<div class="filters">' +
     '<div class="fg"><label>Nhà</label>'+selObj('icf_house', db.houses, f.houseId||'', function(x){ return (x.name||x.address); }, 'Tất cả')+'</div>' +
     '<div class="fg"><label>Loại</label>'+sel('icf_type', [['','Tất cả'],['Hỏng điện','Hỏng điện'],['Hỏng nước','Hỏng nước'],['Hỏng mạng','Hỏng mạng'],['Khác','Khác']], f.type||'')+'</div>' +
-    '<div class="fg"><label>Trạng thái</label>'+sel('icf_status', [['','Tất cả'],['Chưa sửa','Chưa sửa'],['Tiếp nhận sự cố','Tiếp nhận sự cố'],['Đang sửa','Đang sửa'],['Đã sửa','Đã sửa']], f.status||'')+'</div>' +
-    '<button class="btn" onclick="incFilter={houseId:val(\'icf_house\'),type:val(\'icf_type\'),status:val(\'icf_status\')};viewIncidents()">Lọc</button>' +
+    '<div class="fg"><label>Trạng thái</label><div>'+INC_STATUSES.map(function(st,i){ return chk('icf_st_'+i, st, (f.statuses||[]).indexOf(st)>=0); }).join('')+'</div></div>' +
+    '<button class="btn" onclick="incFilter={houseId:val(\'icf_house\'),type:val(\'icf_type\'),statuses:INC_STATUSES.filter(function(st,i){ return isChk(\'icf_st_\'+i); })};viewIncidents()">Lọc</button>' +
+    '<button class="btn gray" onclick="incFilter={};viewIncidents()">Bỏ lọc</button>' +
     '<button class="btn green" onclick="go(\'incidentForm\')">+ Thêm sự cố</button></div>';
+  /* Đợt 21: lọc Trạng thái bằng checkbox chọn nhiều: tích trạng thái nào
+     thì hiện sự cố ở trạng thái đó; không tích gì = tất cả (như 'Tất cả'
+     trước đây). f.status cũ (chuỗi) vẫn được hiểu để tương thích. */
+  var incSts = f.statuses || (f.status ? [f.status] : []);
   var list = db.incidents.filter(function(x){
     if(f.houseId && x.houseId !== f.houseId) return false;
     if(f.type && x.type !== f.type) return false;
-    if(f.status && x.status !== f.status) return false;
+    if(incSts.length && incSts.indexOf(x.status) < 0) return false;
     return true;
   });
   h += tableHtml(['STT','Nhà','Phòng','Loại','Nội dung','SDT','Ngày','Trạng thái','Người tiếp nhận',''], list.map(function(x, i){

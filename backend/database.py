@@ -56,6 +56,7 @@ NEW_COLUMNS = {
         "red_book_images": "JSON DEFAULT '[]'",  # Đợt 6 (mục 5) — danh sách URL ảnh sổ đỏ
         "latitude": "FLOAT",  # Đợt 7 — vĩ độ vị trí bản đồ (nullable, không mặc định)
         "longitude": "FLOAT",  # Đợt 7 — kinh độ vị trí bản đồ (nullable, không mặc định)
+        "managed_for_owner": "BOOLEAN DEFAULT FALSE",  # Quản lý thay chủ ở form nhà
     },
     "rooms": {
         "kitchen": "VARCHAR DEFAULT 'Không có'",

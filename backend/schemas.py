@@ -31,6 +31,7 @@ class HouseCreate(BaseModel):
     longitude: Optional[float] = None
     landlordId: Optional[str] = None
     redBookImages: Optional[List[str]] = []
+    managedForOwner: Optional[bool] = False
 
 
 class HouseUpdate(BaseModel):
@@ -51,6 +52,7 @@ class HouseUpdate(BaseModel):
     longitude: Optional[float] = None
     landlordId: Optional[str] = None
     redBookImages: Optional[List[str]] = None
+    managedForOwner: Optional[bool] = None
 
 
 class HouseOut(OutBase, HouseCreate):

@@ -42,6 +42,7 @@ class House(TimestampMixin, Base):
     longitude = Column("longitude", Float, nullable=True)  # Kinh độ vị trí trên bản đồ (đợt 7)
     redBookImages = Column("red_book_images", JSON, default=list)  # Danh sách URL ảnh sổ đỏ tải lên (đợt 6, mục 5)
     landlordId = Column("landlord_id", String, ForeignKey("landlords.id"), nullable=True)
+    managedForOwner = Column("managed_for_owner", Boolean, default=False)  # Quản lý thay chủ: ẩn/vô hiệu hóa phần Hợp Đồng ở form nhà
 
 
 class Room(TimestampMixin, Base):
