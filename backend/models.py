@@ -287,7 +287,8 @@ class Deposit(TimestampMixin, Base):
     phone = Column(String, default="")
     amount = Column(Integer, default=0)  # Tiền giữ phòng
     rentPrice = Column("rent_price", Integer, default=0)  # Giá thuê
-    vacantDays = Column("vacant_days", Integer, default=0)  # Thời gian trống phòng (ngày)
+    vacantDays = Column("vacant_days", Integer, default=0)  # Cũ (đợt 32 không dùng hiển thị nữa): số ngày trống phòng
+    vacantDate = Column("vacant_date", Date, nullable=True)  # Đợt 32: Phòng trống từ ngày (mốc ngày cụ thể)
     payMonths = Column("pay_months", Integer, default=1)      # Số tháng thanh toán 1 lần (SPEC-WEB-2 D)
     payDayFrom = Column("pay_day_from", Integer, default=1)   # Thời gian thanh toán từ ngày
     payDayTo = Column("pay_day_to", Integer, default=3)       # đến ngày

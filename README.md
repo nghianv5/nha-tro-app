@@ -1047,6 +1047,58 @@ tới cọc giữ phòng, không điền khách thuê và ngày thuê.
   không trừ tiền cọc). Việc xử lý cọc sau khi ký là quyết định riêng,
   làm ở đợt khác nếu người dùng yêu cầu.
 
+## Đợt 32 — Chi tiết hợp đồng thuê làm rõ + đầy đủ; "Phòng trống từ ngày" là mốc ngày
+
+**Đính chính của người dùng (rút lại yêu cầu trước): ý tưởng "loại hợp
+đồng (hợp đồng cọc, hợp đồng thuê)" đã bỏ hẳn — không thêm trường/cột
+loại, không gộp cọc vào bảng thuê.** Bảng "Hợp đồng thuê phòng" chỉ
+liệt kê `db.contracts` (đã đúng như vậy từ trước, kiểm chứng lại);
+cọc giữ phòng nằm riêng ở màn Cọc. Tab HĐ chủ nhà giữ nguyên.
+
+**Màn chi tiết hợp đồng thuê vốn đã có (`viewContractDetail`, route
+`contractDetail`) nhưng gần như bị ẩn** — lối vào duy nhất là link mã
+HĐ chữ nhỏ, nội dung lại gọn quá so với form — nên người dùng tưởng
+chưa có. Đợt này làm rõ lối vào và làm đầy đủ, theo tiền lệ màn chi
+tiết nhà (chi tiết soi đúng form thêm/sửa, chỉ đọc):
+- Bảng thuê thêm nút **"Chi tiết"** từng dòng (cạnh Sửa, cùng kiểu
+  `linkbtn`), mở đúng `contractDetail` sẵn có; link mã HĐ vẫn giữ.
+- Chi tiết mở rộng theo đúng các phần của form hợp đồng: thông tin
+  nhà/phòng; giá thuê, cọc, số người ở; dịch vụ đầy đủ (điện+nước kèm
+  đơn vị, điện chung, vệ sinh, internet, xe máy/ô tô/xe đạp số lượng +
+  phí); thời gian thuê & thanh toán (ngày vào, ngày ra, ngày ký, số
+  tháng thanh toán 1 lần, từ ngày–đến ngày); hồ sơ khách thuê đầy đủ
+  từ customer record (họ tên, ngày sinh, địa chỉ thường trú, SĐT,
+  giới tính, nghề nghiệp, tình trạng hôn nhân, email, CMND, địa chỉ
+  hiện tại, ghi chú); trạng thái hợp đồng. Ảnh CMND không hiện ở chi
+  tiết: trong app ảnh CMND chỉ là placeholder tĩnh từ đợt 5, không có
+  dữ liệu ảnh thật để điền.
+- Các nút đang có giữ nguyên: Sửa hợp đồng, Thanh lý hợp đồng (chỉ
+  khi đang hiệu lực), Tạo hóa đơn tháng này, Quay lại.
+- Bảng thuê **bỏ 2 cột: "Giá phòng (vnđ)" và "Số người ở"** (cả tiêu
+  đề và dữ liệu từng dòng); các cột còn lại giữ nguyên thứ tự và nội
+  dung, cộng thêm cột Chi tiết. Cố tình không đụng tới cột Trạng thái
+  (hiển thị trạng thái phòng như hiện tại) và logic cột ngày trống —
+  ngoài yêu cầu lần này (riêng cột ngày trống thì đổi theo mục dưới).
+
+**"Phòng trống từ ngày" là mốc ngày cụ thể, không phải số ngày** (theo
+làm rõ của người dùng; ghi đè ghi chú cũ "không đụng tới cột Thời gian
+trống phòng"): trường này trước đây là số nguyên ngày
+(`deposits.vacantDays`, ô number trong form cọc, cột "Thời gian trống
+phòng (ngày)" ở bảng Cọc và bảng thuê) — số ngày không neo vào mốc
+nào nên không nói được phòng trống từ khi nào.
+- Form cọc: ô cũ đổi thành ô date **"Phòng trống từ ngày"** (để trống
+  được = chưa xác định), lưu vào trường mới `deposits.vacantDate`
+  (Date, thêm qua `ensure_columns`/`NEW_COLUMNS`).
+- **Không xóa dữ liệu cũ:** cột `vacant_days` và số ngày cũ giữ nguyên
+  trong DB, chỉ không dùng để hiển thị nữa (tiền lệ các đợt trước).
+  Bản ghi cũ chưa có ngày thì cột hiển thị để trống — không tự suy
+  ngày từ số ngày.
+- Cột ở bảng Cọc và bảng thuê đổi tiêu đề thành **"Phòng trống từ
+  ngày"**, giá trị là ngày (`fmtDate`) của cọc mới nhất của phòng.
+- Rà soát cho thấy `vacantDays` trước đây **chỉ dùng để hiển thị**
+  (form cọc + 2 bảng), không có logic tính toán nào dùng nó, nên đổi
+  hết sang ngày như trên mà không ảnh hưởng tính toán nào.
+
 ## Đợt 31 — Màn Thanh lý hợp đồng gọn lại (chỉ đổi trình bày)
 
 **Theo yêu cầu người dùng (gửi ảnh màn Thanh lý): chỉ đổi trình bày,

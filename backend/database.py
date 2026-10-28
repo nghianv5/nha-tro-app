@@ -104,6 +104,7 @@ NEW_COLUMNS = {
         "code": "VARCHAR DEFAULT ''",
         "rent_price": "INTEGER DEFAULT 0",
         "vacant_days": "INTEGER DEFAULT 0",
+        "vacant_date": "DATE",
         "move_in_date": "DATE",
         "move_out_date": "DATE",
         "contract_date": "DATE",

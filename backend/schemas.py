@@ -568,6 +568,7 @@ class DepositCreate(BaseModel):
     amount: Optional[int] = 0
     rentPrice: Optional[int] = 0
     vacantDays: Optional[int] = 0
+    vacantDate: Optional[DateType] = None
     payMonths: Optional[int] = 1
     payDayFrom: Optional[int] = 1
     payDayTo: Optional[int] = 3
@@ -590,6 +591,7 @@ class DepositUpdate(BaseModel):
     amount: Optional[int] = None
     rentPrice: Optional[int] = None
     vacantDays: Optional[int] = None
+    vacantDate: Optional[DateType] = None
     payMonths: Optional[int] = None
     payDayFrom: Optional[int] = None
     payDayTo: Optional[int] = None
