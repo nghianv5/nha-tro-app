@@ -198,12 +198,6 @@ function fmtDT(iso){
   if(d.length === 3) return d[0] + '/' + Number(d[1]) + '/' + Number(d[2]) + (t ? ' ' + t : '');
   return iso;
 }
-/* Đợt 5: tiền theo TRIỆU dạng thập phân cho lưới Phòng/Cọc/Hợp đồng:
-   4.500.000 -> "4.5", 5.000.000 -> "5", 0 -> "0" */
-function fmtTrieu(n){
-  var v = (Number(n) || 0) / 1000000;
-  return String(Math.round(v * 100) / 100);
-}
 /* ----- Hồ sơ khách đầy đủ (dùng lại ở form HĐ, form cọc, form khách) ----- */
 function custFieldsHtml(p, c){
   c = c || {};
@@ -1768,11 +1762,11 @@ function viewDeposits(){
     if(f.roomId && d.roomId !== f.roomId) return false;
     return true;
   });
-  /* Đợt 5: tiền hiển thị theo TRIỆU thập phân, cột Sửa/Xóa tách riêng */
-  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Giá phòng (triệu)','Giá thuê (triệu)','Tiền giữ phòng (triệu)','Thời gian trống phòng (ngày)','Ngày vào','Ngày ra','Ngày cọc','Ngày đến làm hợp đồng','Ngày hết hạn cọc','Sửa','Xóa'], list.map(function(d, i){
+  /* Đợt 30: tiền hiển thị theo VNĐ, cột Sửa/Xóa tách riêng */
+  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Giá phòng (vnđ)','Giá thuê (vnđ)','Tiền giữ phòng (vnđ)','Thời gian trống phòng (ngày)','Ngày vào','Ngày ra','Ngày cọc','Ngày đến làm hợp đồng','Ngày hết hạn cọc','Sửa','Xóa'], list.map(function(d, i){
     var room = byId(db.rooms, d.roomId);
     return '<tr><td>'+(i+1)+'</td><td>'+esc(d.code||'')+'</td><td>'+esc(houseName(d.houseId))+'</td><td>'+esc(roomName(d.roomId))+'</td>' +
-      '<td>'+fmtTrieu(room ? room.price : 0)+'</td><td>'+fmtTrieu(d.rentPrice)+'</td><td class="price">'+fmtTrieu(d.amount)+'</td><td>'+(d.vacantDays||0)+'</td>' +
+      '<td>'+fmt(room ? room.price : 0)+'</td><td>'+fmt(d.rentPrice)+'</td><td class="price">'+fmt(d.amount)+'</td><td>'+(d.vacantDays||0)+'</td>' +
       '<td>'+fmtDate(d.moveInDate)+'</td><td>'+fmtDate(d.moveOutDate)+'</td><td>'+fmtDate(d.date)+'</td><td>'+fmtDate(d.contractDate)+'</td><td>'+fmtDate(d.expiryDate)+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'depositForm\',{id:\''+d.id+'\'})">Sửa</button></td>' +
       '<td class="act"><button class="linkbtn red" onclick="delBtn(\'Cọc phòng '+esc(roomName(d.roomId))+'\',\'deposits\',\''+d.id+'\')">Xóa</button></td></tr>';
@@ -1944,11 +1938,11 @@ function viewContracts(){
     var s = roomStatus(r);
     return s==='rented' ? '<span class="badge b-rented">Đang thuê</span>' : (s==='deposited' ? '<span class="badge b-deposited">Đang cọc</span>' : '<span class="badge b-empty">Trống</span>');
   };
-  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Giá phòng (triệu)','Giá thuê (triệu)','Tiền cọc (triệu)','Trạng thái','Thời gian trống phòng (ngày)','Ngày vào','Ngày ra','Số người ở','Sửa','Thanh lý'], list.map(function(c, i){
+  h += tableHtml(['STT','Mã HĐ','Tên nhà','Tên phòng','Giá phòng (vnđ)','Giá thuê (vnđ)','Tiền cọc (vnđ)','Trạng thái','Thời gian trống phòng (ngày)','Ngày vào','Ngày ra','Số người ở','Sửa','Thanh lý'], list.map(function(c, i){
     var room = byId(db.rooms, c.roomId);
     var dep = latestDeposit(c.roomId);
     return '<tr><td>'+(i+1)+'</td><td><a onclick="go(\'contractDetail\',{id:\''+c.id+'\'})">'+esc(c.code||'')+'</a></td><td>'+esc(houseName(c.houseId))+'</td><td>'+esc(roomName(c.roomId))+'</td>' +
-      '<td>'+fmtTrieu(room ? room.price : 0)+'</td><td class="price">'+fmtTrieu(c.price)+'</td><td>'+fmtTrieu(c.deposit)+'</td>' +
+      '<td>'+fmt(room ? room.price : 0)+'</td><td class="price">'+fmt(c.price)+'</td><td>'+fmt(c.deposit)+'</td>' +
       '<td>'+roomStatusBadge(room)+'</td><td>'+(dep ? (dep.vacantDays||0) : '')+'</td>' +
       '<td>'+fmtDate(c.startDate)+'</td><td>'+fmtDate(c.endDate)+'</td><td>'+c.people+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'contractForm\',{id:\''+c.id+'\'})">Sửa</button></td>' +
@@ -2176,12 +2170,12 @@ function viewLiquidate(p){
   var lastD = lastReading(c.roomId, 'dien'), lastN = lastReading(c.roomId, 'nuoc');
   var h = pageTitle('Thanh lý hợp đồng ' + (c.code || '') + ' — ' + roomName(c.roomId));
   h += '<form class="form-card" onsubmit="event.preventDefault();previewLiquidate(\''+c.id+'\')">' +
-    '<h3 class="sec" style="margin-top:0">Bước 1 — Chốt công tơ & thông tin thanh lý</h3><div class="fgrid">' +
+    '<h3 class="sec" style="margin-top:0">Bước 1 — Chốt công tơ & thông tin thanh lý</h3><div class="liq-grid">' +
     fld('Ngày thanh lý', inp('lq_date', today(), 'date'), true) +
     fld('Điện — chỉ số cuối (trước: '+(lastD?lastD.current:0)+')', inp('lq_dien', lastD?lastD.current:'', 'number')) +
     fld('Nước — chỉ số cuối (trước: '+(lastN?lastN.current:0)+')', inp('lq_nuoc', lastN?lastN.current:'', 'number')) +
     fld('Tiền phòng đã trả thừa (vnđ)', inp('lq_prepaid', 0, 'money')) +
-    '</div><label class="chk"><input type="checkbox" id="lq_refund"> Hoàn tiền phòng thừa cho khách</label>' +
+    '</div><label class="chk liq-refund"><input type="checkbox" id="lq_refund"> Hoàn tiền phòng thừa cho khách</label>' +
     '<div class="btnrow"><button class="btn" type="submit">Tính thử (bước 2)</button>' +
     '<button class="btn gray" type="button" onclick="go(\'contracts\')">Quay lại</button></div></form><div id="lq_result"></div>';
   setContent(h);
@@ -2193,13 +2187,15 @@ function liqPayload(confirm){
 }
 function previewLiquidate(cid){
   api('/contracts/' + cid + '/liquidate', 'POST', liqPayload(false)).then(function(s){
-    var h = '<div class="card" style="margin-top:14px"><h3 class="sec" style="margin-top:0">Bước 2 — Tổng hợp thanh lý</h3>' +
-      '<div class="kv"><span>Số ngày ở kỳ cuối</span><span>'+s.days+' ngày</span></div>' +
+    var h = '<div class="card liq-card"><h3 class="sec" style="margin-top:0">Bước 2 — Tổng hợp thanh lý</h3>' +
+      '<div class="liq-note"><span>Số ngày ở kỳ cuối</span><span>'+s.days+' ngày</span></div>' +
+      '<div class="liq-group"><div class="liq-group-title">Các khoản khách nợ</div>' +
       '<div class="kv"><span>Tiền phòng khách nợ</span><span>'+fmt(s.roomOwed)+'</span></div>' +
       s.lines.map(function(l){ return '<div class="kv"><span>'+esc(l.label)+'</span><span>'+fmt(l.amount)+'</span></div>'; }).join('') +
-      '<div class="kv"><span>Tổng khách nợ</span><span>'+fmt(s.owedTotal)+'</span></div>' +
-      '<div class="kv"><span>Trả khách (cọc + phòng thừa)</span><span>'+fmt(s.returnTotal)+'</span></div>' +
-      '<div class="kv"><span>Kết quả</span><span>' + (s.net > 0 ? 'Khách đóng thêm ' + fmt(s.net) : (s.net < 0 ? 'Hoàn trả khách ' + fmt(-s.net) : 'Hòa — không thu thêm')) + '</span></div>' +
+      '<div class="kv liq-total"><span>Tổng khách nợ</span><span>'+fmt(s.owedTotal)+'</span></div></div>' +
+      '<div class="liq-group"><div class="liq-group-title">Trả lại khách</div>' +
+      '<div class="kv"><span>Trả khách (cọc + phòng thừa)</span><span>'+fmt(s.returnTotal)+'</span></div></div>' +
+      '<div class="liq-result"><span>Kết quả</span><span>' + (s.net > 0 ? 'Khách đóng thêm ' + fmt(s.net) : (s.net < 0 ? 'Hoàn trả khách ' + fmt(-s.net) : 'Hòa — không thu thêm')) + '</span></div>' +
       '<div class="btnrow"><button class="btn green" onclick="confirmLiquidate(\''+cid+'\')">Hoàn tất thanh lý</button></div></div>';
     document.getElementById('lq_result').innerHTML = h;
   }).catch(errToast);
@@ -2213,11 +2209,11 @@ function confirmLiquidate(cid){
 function landlordContractsHtml(){
   var h = '<div class="btnrow"><button class="btn green" onclick="go(\'landlordContractForm\')">+ Thêm HĐ chủ nhà</button>' +
     '<button class="btn" onclick="go(\'landlordForm\')">+ Thêm chủ nhà</button></div>';
-  /* Rà soát đợt 5: lưới HĐ chủ nhà — tiền theo TRIỆU + kỳ/thời gian thanh toán đúng dữ kiện HĐ */
-  h += tableHtml(['STT','Mã HĐ','Tên nhà','Địa chỉ','Chủ nhà','Tiền thuê (triệu)','Tiền cọc (triệu)','Kỳ thanh toán','Thời gian thanh toán','Ngày bắt đầu','Ngày kết thúc','Trạng thái',''], db.landlordContracts.map(function(lc, i){
+  /* Đợt 30: lưới HĐ chủ nhà — tiền theo VNĐ + kỳ/thời gian thanh toán đúng dữ kiện HĐ */
+  h += tableHtml(['STT','Mã HĐ','Tên nhà','Địa chỉ','Chủ nhà','Tiền thuê (vnđ)','Tiền cọc (vnđ)','Kỳ thanh toán','Thời gian thanh toán','Ngày bắt đầu','Ngày kết thúc','Trạng thái',''], db.landlordContracts.map(function(lc, i){
     var hs = byId(db.houses, lc.houseId);
     return '<tr><td>'+(i+1)+'</td><td>'+esc(lc.code||'')+'</td><td>'+esc(hs?(hs.name||hs.address):'')+'</td><td>'+esc(hs?hs.address:'')+'</td>' +
-      '<td>'+esc(landlordName(lc.landlordId))+'</td><td class="price">'+fmtTrieu(lc.rentPrice)+'</td><td>'+fmtTrieu(lc.deposit)+'</td>' +
+      '<td>'+esc(landlordName(lc.landlordId))+'</td><td class="price">'+fmt(lc.rentPrice)+'</td><td>'+fmt(lc.deposit)+'</td>' +
       '<td>'+((lc.payMonths||1) > 1 ? 'Mỗi ' + lc.payMonths + ' tháng' : 'Hàng tháng')+'</td><td>'+(lc.payDate ? fmtDate(lc.payDate) : 'Ngày '+(lc.payFromDay || lc.payDay || 1)+' đến '+(lc.payToDay || 3))+'</td><td>'+fmtDate(lc.startDate)+'</td><td>'+fmtDate(lc.endDate)+'</td>' +
       '<td>'+(lc.status==='liquidated' ? '<span class="badge b-gray">Đã thanh lý</span>' : '<span class="badge b-paid">Đang hiệu lực</span>')+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'landlordContractForm\',{id:\''+lc.id+'\'})">Sửa</button>' +

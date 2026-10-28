@@ -217,3 +217,30 @@ input:focus,select:focus,textarea:focus{border-color:#1565c0;outline:2px solid r
   .bottomnav .bn-ic{font-size:18px}
   .brand{font-size:16px}
 }
+
+/* ----- Thanh lý hợp đồng: trình bày gọn lại (chỉ đổi CSS, không đổi dữ liệu) ----- */
+.liq-card{margin-top:14px}
+/* Bước 1: lưới 2 cột thoáng, nhãn dài không bị vỡ */
+.liq-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 20px}
+/* Checkbox thành hàng riêng, cách rõ lưới phía trên và hàng nút phía dưới */
+.liq-refund{display:flex;margin:16px 0 2px}
+/* Bước 2: dòng ngày ở chỉ là ghi chú mờ, không lẫn với các dòng tiền */
+.liq-note{display:flex;justify-content:space-between;gap:16px;font-size:13px;color:#9e9e9e;padding:2px 0 10px}
+.liq-group{margin-top:10px}
+.liq-group-title{font-size:13px;font-weight:700;color:#1565c0;margin:0 0 2px}
+/* Trong nhóm: chỉ kẻ nhẹ, bỏ đường chấm mờ của .kv */
+.liq-group .kv{border-bottom:1px solid #f1f3f4}
+.liq-group .kv:last-child{border-bottom:none}
+/* Dòng tổng: kẻ đậm phía trên, chữ đậm, nhãn không còn xám mờ */
+.liq-total{border-top:2px solid #cfd8dc}
+.liq-total span:first-child{color:#263238;font-weight:700}
+.liq-total span:last-child{font-weight:700}
+/* Dải kết quả nổi bật: nền tint xanh dương của app, chữ đậm, to hơn một chút; số tiền không ngắt dòng */
+.liq-result{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#e3f2fd;border-radius:8px;padding:12px 14px;margin-top:14px;font-size:15px;font-weight:700;color:#0d47a1}
+.liq-result span:last-child{white-space:nowrap}
+@media (max-width:768px){
+  .liq-grid{grid-template-columns:1fr}
+}
+@media (max-width:400px){
+  .liq-result{flex-direction:column;align-items:flex-start;gap:2px}
+}

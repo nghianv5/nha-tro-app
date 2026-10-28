@@ -1047,6 +1047,67 @@ tới cọc giữ phòng, không điền khách thuê và ngày thuê.
   không trừ tiền cọc). Việc xử lý cọc sau khi ký là quyết định riêng,
   làm ở đợt khác nếu người dùng yêu cầu.
 
+## Đợt 31 — Màn Thanh lý hợp đồng gọn lại (chỉ đổi trình bày)
+
+**Theo yêu cầu người dùng (gửi ảnh màn Thanh lý): chỉ đổi trình bày,
+tuyệt đối không đổi tính năng, tính toán, thứ tự dòng, nội dung chữ,
+id ô nhập, handler nút hay payload gọi API.** Hai hàm `viewLiquidate`
+(bước 1) và `previewLiquidate` (bước 2) giữ nguyên mọi chữ, số tiền
+(`fmt`), nút và luồng Tính thử → Hoàn tất thanh lý; chỉ thêm class và
+CSS mới trong `frontend/styles.css` (`.liq-grid`, `.liq-refund`,
+`.liq-note`, `.liq-group`, `.liq-group-title`, `.liq-total`,
+`.liq-result`, `.liq-card`).
+
+- **Bước 2 gom nhóm cho mắt đọc theo cụm:** dòng "Số ngày ở kỳ cuối"
+  thành ghi chú mờ (không lẫn với các dòng tiền); nhóm "Các khoản khách
+  nợ" gồm Tiền phòng khách nợ + từng dòng dịch vụ, rồi dòng "Tổng khách
+  nợ" in đậm với đường kẻ đậm phía trên; nhóm "Trả lại khách" gồm dòng
+  Trả khách (cọc + phòng thừa); cuối cùng dòng "Kết quả" thành dải nổi
+  bật (nền tint xanh dương của app, chữ đậm, to hơn một chút, số tiền
+  không ngắt dòng) để nhìn một phát thấy ngay là thu thêm hay hoàn trả.
+  Đường chấm mờ từng dòng của `.kv` được bỏ trong nhóm, chỉ giữ đường
+  kẻ nhẹ giữa các dòng chi tiết và đường kẻ đậm trước dòng tổng.
+- **Bước 1 thoáng hơn:** lưới 4 ô dùng `.liq-grid` 2 cột ở màn vừa trở
+  lên, 1 cột ở màn hẹp (≤768px) nên nhãn dài ("Điện — chỉ số cuối
+  (trước: 0)") không bị vỡ; checkbox "Hoàn tiền phòng thừa cho khách"
+  thành hàng riêng (`.liq-refund`), cách rõ lưới phía trên và hàng nút
+  phía dưới. Dải kết quả xếp dọc ở màn rất hẹp (≤400px) để không tràn.
+- **Cố tình giữ nguyên:** toàn bộ chữ, thứ tự dòng, id (`lq_date`,
+  `lq_dien`, `lq_nuoc`, `lq_prepaid`, `lq_refund`), handler
+  (`previewLiquidate`, `confirmLiquidate`), payload (`liqPayload`),
+  tính toán phía server và các màn khác (class mới đều có tiền tố
+  `liq-`, không ảnh hưởng `.kv`/`.fgrid` ở nơi khác).
+
+## Đợt 30 — 3 bảng Cọc / Hợp đồng / HĐ chủ nhà hiển thị theo vnđ
+
+**Theo yêu cầu người dùng ("Đổi cả 3 bảng sang đồng"): chỉ đổi hiển
+thị, tuyệt đối không đổi dữ liệu.** Sau đợt 27 bảng Phòng đã hiển thị
+đồng, nhưng 3 bảng này vẫn hiển thị theo triệu qua `fmtTrieu` (giá trị
+lưu trong DB vốn đã là đồng, chia 1.000.000 để hiển thị) nên cùng một
+số tiền 5.700.000đ hiện là 5,7 ở các bảng này mà lại là 5.700.000đ ở
+bảng Phòng — đúng họ nhầm lẫn từng gây crash phòng 101.
+
+- **Bảng Cọc** (danh sách cọc giữ phòng): 3 cột tiền — Giá phòng, Giá
+  thuê, Tiền giữ phòng — từ `fmtTrieu` sang `fmt` (vnđ), tiêu đề cột
+  "(triệu)" thành "(vnđ)".
+- **Bảng Hợp đồng** (danh sách hợp đồng thuê phòng): 3 cột tiền — Giá
+  phòng, Giá thuê, Tiền cọc — tương tự.
+- **Bảng HĐ chủ nhà** (danh sách hợp đồng chủ nhà): 2 cột tiền — Tiền
+  thuê, Tiền cọc — tương tự.
+- **Rà soát toàn bộ `fmtTrieu`:** trước đợt này chỉ còn đúng 3 chỗ gọi
+  (3 bảng trên) nên sau khi đổi, hàm `fmtTrieu` không còn chỗ nào dùng
+  và đã được gỡ bỏ luôn để khỏi gây nhầm lẫn về sau. Phần hạ tầng nhập
+  liệu `money-trieu` trong hàm `inp()` vẫn còn (không form nào dùng)
+  nên không đụng tới.
+- **Xuất CSV:** 3 bảng này không có xuất CSV riêng (chỉ có xuất CSV
+  danh sách phòng, vốn đã ghi số đồng từ trước) nên không có gì phải
+  sửa thêm.
+- **Không đổi:** form nhập (vốn đã nhập theo đồng), backend/schema,
+  dữ liệu đã lưu, màn chi tiết. Màn chi tiết hợp đồng vốn đã hiển thị
+  theo vnđ (`fmt`) từ trước; bảng Cọc và bảng HĐ chủ nhà không có màn
+  chi tiết riêng (chỉ có Sửa/Xóa), còn chi tiết nhà hiển thị tiền cọc
+  theo vnđ từ đợt 27.
+
 ## Triển khai lên Render
 
 Project có sẵn `render.yaml` (Blueprint) và `Dockerfile` đã tương thích Render
