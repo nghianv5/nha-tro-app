@@ -3,9 +3,10 @@
 Tên trường dùng camelCase để khớp với JSON API và frontend.
 """
 from datetime import date as DateType
+from datetime import datetime as DateTimeType
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class OutBase(BaseModel):
@@ -60,6 +61,18 @@ class HouseOut(OutBase, HouseCreate):
 
 
 # ---------- Phòng ----------
+def _clamp_pay_day(cls, v):
+    """Đợt 26: 'Thời gian đóng tiền' là ngày trong tháng -> kẹp về 1-31.
+    None (trường hợp update không đụng tới) giữ nguyên."""
+    if v is None:
+        return None
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return v
+    return max(1, min(31, v))
+
+
 class RoomCreate(BaseModel):
     houseId: str
     name: str
@@ -76,9 +89,14 @@ class RoomCreate(BaseModel):
     payMonths: Optional[int] = 1
     payFromDay: Optional[int] = 1
     payToDay: Optional[int] = 3
+    # Đợt 26: ngày đóng tiền duy nhất của phòng; 2 trường cũ vẫn nhận
+    # để tương thích nhưng không dùng để hiển thị nữa.
+    payDay: Optional[int] = 1
     amenities: Optional[List[str]] = []
     services: Optional[dict] = {}
     images: Optional[List[str]] = []
+
+    _clamp_payDay = field_validator("payDay", mode="before")(_clamp_pay_day)
 
 
 class RoomUpdate(BaseModel):
@@ -97,9 +115,12 @@ class RoomUpdate(BaseModel):
     payMonths: Optional[int] = None
     payFromDay: Optional[int] = None
     payToDay: Optional[int] = None
+    payDay: Optional[int] = None
     amenities: Optional[List[str]] = None
     services: Optional[dict] = None
     images: Optional[List[str]] = None
+
+    _clamp_payDay = field_validator("payDay", mode="before")(_clamp_pay_day)
 
 
 class RoomOut(OutBase, RoomCreate):
@@ -583,6 +604,8 @@ class DepositUpdate(BaseModel):
 
 class DepositOut(OutBase, DepositCreate):
     id: str
+    # Đợt 29: frontend cần created_at để chọn cọc mới nhất của phòng khi tạo hợp đồng.
+    created_at: Optional[DateTimeType] = None
 
 
 # ---------- Chủ nhà ----------

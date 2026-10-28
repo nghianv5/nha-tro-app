@@ -884,6 +884,169 @@ xóa phòng vẫn hoạt động.
 - Hóa đơn tháng tự tính các dòng: Điện (chỉ số đầu–cuối × đơn giá), Nước (theo người hoặc theo số),
   Điện chung, Vệ sinh, Internet (theo người), Xe máy/Ô tô/Xe đạp (số lượng × phí).
 
+## Đợt 26 — Form phòng chỉ còn 1 ô "Thời gian đóng tiền" + chặn số tiền vượt int32
+
+**1. Bỏ cặp "Thanh toán từ ngày — đến ngày" ở màn Thêm/Sửa phòng:**
+
+- Form phòng (dùng chung thêm/sửa) nay chỉ có **1 ô duy nhất nhãn đúng
+  "Thời gian đóng tiền"** (ngày trong tháng, 1–31, mặc định 1), lưu vào
+  trường mới `rooms.payDay` (thêm qua `ensure_columns`, kiểu số nguyên).
+  Ô "Số tháng thanh toán 1 lần" giữ nguyên, không đụng tới.
+- Sửa phòng cũ: ô mới nạp giá trị từ `payFromDay` cũ nếu phòng chưa có
+  `payDay` (ngày bắt đầu của khoảng cũ là ngày đóng tiền hợp lý nhất).
+- **Không xóa dữ liệu cũ:** cột `payFromDay`/`payToDay` và dữ liệu trong
+  DB giữ nguyên (theo đúng tiền lệ đợt 10 với `payDate`) — chỉ bỏ khỏi
+  form và khỏi hiển thị, không migration xóa cột, không ghi đè. Schema
+  `RoomCreate`/`RoomUpdate` vẫn nhận 2 trường cũ để tương thích, nhưng
+  không dùng để hiển thị nữa.
+- Chi tiết phòng thêm dòng **"Thời gian đóng tiền: Ngày X"** (phòng cũ
+  chưa có `payDay` thì hiển thị ngày từ `payFromDay`). Danh sách phòng
+  vốn không có cột khoảng ngày nên không đổi. Import phòng bằng file
+  CSV nay tạo phòng với `payDay: 1` thay cho cặp từ–đến.
+- Các màn khác giữ nguyên ô từ–đến của riêng chúng (form HĐ thuê, form
+  cọc): chỉ đổi nguồn nạp mặc định — nay lấy từ `payDay` của phòng
+  (phòng cũ thì fallback về `payFromDay`/`payToDay` cũ).
+- Giá trị ngoài 1–31 thì **kẹp về khoảng hợp lệ** (0 → 1, 45 → 31), cùng
+  một quy tắc ở validator schema backend và khi lưu ở frontend.
+
+**2. Thêm phòng bị crash `integer out of range` khi nhập giá (log thật
+từ Render, gộp chung đợt để khỏi deploy 2 lần):**
+
+- **Nguyên nhân:** gõ "5.700.000" (đồng) vào ô "Giá phòng (triệu vnđ)"
+  → parser triệu hiểu thành 5.700.000 triệu → ×1.000.000 = 5,7 nghìn
+  tỷ, trong khi cột INTEGER của PostgreSQL chỉ chứa tối đa ~2,147 tỷ
+  → INSERT nổ `NumericValueOutOfRange`, server trả 500 chung chung và
+  phòng không được lưu. SQLite không bắt được lỗi này (số nguyên
+  64-bit) nên test cũ không phát hiện — cùng điểm mù như vụ FK-500
+  đợt 11.
+- **Server chặn trước khi ghi** (`backend/intrange.py`, chạy vô điều kiện
+  trong router CRUD generic nên mọi màn tạo/sửa đều được hưởng): số
+  nguyên nào vượt int32 thì API trả **400 + thông báo tiếng Việt dễ
+  hiểu** thay vì để Postgres nổ 500. Riêng ô triệu (giá phòng) thì
+  thông báo nhắc đúng đơn vị, vd: "Giá phòng 5.700.000 triệu (tức
+  5.700.000.000.000đ) vượt quá giới hạn lưu trữ. Ô này tính theo triệu
+  — nếu ý bạn là 5.700.000đ thì nhập 5,7 thay vì 5.700.000."
+- **Frontend cảnh báo nhầm đơn vị** khi lưu phòng: ô triệu nào quy đổi
+  từ 10.000 triệu trở lên (10 tỷ/tháng — giá thuê thật không bao giờ
+  chạm tới) thì chặn lưu và báo rõ bạn đang nhập bao nhiêu triệu, ô này
+  tính theo triệu, và gợi ý số triệu đúng nếu ý bạn là số đồng đó.
+  **Không tự đổi giá trị giùm người dùng** — số đã gõ giữ nguyên để
+  người dùng tự sửa.
+
+## Đợt 27 — Giá phòng nhập trực tiếp bằng vnđ (không còn ô triệu)
+
+**Đính chính theo yêu cầu người dùng: nhập "5.700.000" mới là đúng.**
+
+- Form Thêm/Sửa phòng: ô **"Giá phòng (triệu vnđ)"** (kiểu `money-trieu`)
+  đổi thành **"Giá phòng (vnđ)"** (kiểu `money`, placeholder "VD:
+  5.700.000"): gõ "5.700.000" thì lưu đúng **5.700.000đ**, không nhân
+  1.000.000 nữa. Sửa phòng cũ thì ô giá nạp đúng số đồng đã lưu (định
+  dạng phân cách nghìn), không dùng `trieuVal` nữa.
+- **Đơn vị lưu trữ không đổi** (cột `price` vốn đã lưu theo đồng) nên
+  **không migration, không đổi dữ liệu cũ** — các phòng đã lưu trước đó
+  vẫn đúng giá trị.
+- Hiển thị/lọc cho nhất quán với ô nhập mới: danh sách phòng đổi 2 cột
+  **"Cọc (triệu)" / "Giá phòng (triệu)"** thành **"Cọc (vnđ)" / "Giá
+  phòng (vnđ)"** (hiển thị `fmt` thay cho `fmtTrieu`); chi tiết phòng và
+  bộ lọc giá phòng vốn đã tính theo vnđ nên không đổi; import/export
+  CSV phòng cũng vốn đã tính theo vnđ.
+- **App hiện không còn ô nhập theo triệu nào** (giá phòng là ô triệu cuối
+  cùng; tiền thuê nhà, tiền thuê hợp đồng, cọc... đều đã nhập bằng vnđ
+  từ trước): cảnh báo nhầm đơn vị triệu ở frontend đợt 26 được **gỡ bỏ**
+  khỏi form phòng thay vì giữ cho ô khác. Guard chặn số vượt int32 ở
+  server (`backend/intrange.py`) **vẫn giữ** cho mọi trường tiền — riêng
+  giá phòng thì 5.700.000 giờ là giá trị hợp lệ, không bị chặn; giá trị
+  thật sự vượt int32 (~2,147 tỷ) vẫn bị chặn 400 với thông báo chung
+  "quá lớn", không còn gợi ý đơn vị triệu cho giá phòng.
+- Chưa đổi (giữ nguyên để khỏi trộn đơn vị trong cùng một bảng, hỏi thêm
+  nếu muốn đổi): danh sách Cọc và danh sách Hợp đồng vẫn hiển thị theo
+  triệu (`fmtTrieu`) dù form cọc/hợp đồng nhập bằng vnđ — cùng họ nhầm
+  lẫn đơn vị như giá phòng trước đây.
+
+## Đợt 28 — Dịch vụ form cọc nạp tự động từ phòng
+
+**Theo yêu cầu người dùng: phần Dịch vụ trong màn hình cọc phòng phải
+load tự động từ thông tin phòng.** Trước đây `depFillFromRoom` chỉ nạp
+giá điện + giá nước, nên đổi phòng thì cách tính điện/nước và phí xe vẫn
+kẹt giá trị của phòng cũ (hoặc mặc định) — đó chính là lỗi người dùng
+báo.
+
+- `depFillFromRoom` (chạy khi chọn/đổi phòng ở form cọc, kể cả đổi nhà
+  làm đổi danh sách phòng) giờ nạp **toàn bộ phần Dịch vụ** từ phòng đang
+  chọn: giá điện + cách tính điện (`svPriceOf`/`svUnitOf`, mặc định
+  3000/số), giá nước + cách tính nước (80000/người), phí xe máy/ô tô/xe
+  đạp từ service row cùng key của phòng nếu có (mặc định 30000/100000/
+  10000 khi phòng không có key đó). Select đơn vị gán `.value` trực tiếp
+  (không qua `moneyFmt`); đơn vị của phòng không có trong select thì về
+  mặc định.
+- Phí xe của phòng đọc robust theo mọi dạng row đã tồn tại: ưu tiên
+  `fee` (dạng `{count, fee}`), rồi `price`/số trần (dạng `{price}` hoặc
+  số), cuối cùng là mặc định.
+- **Quy tắc nạp lại:**
+  - Nạp theo phòng: giá điện, cách tính điện, giá nước, cách tính nước,
+    phí xe máy/ô tô/xe đạp (cùng các trường thông tin phòng đã nạp từ
+    trước: giá thuê, giá phòng, cọc, số người tối đa, số tháng thanh
+    toán, thời gian đóng tiền).
+  - Giữ nguyên khi đổi phòng: **số lượng xe máy/ô tô/xe đạp** — đó là
+    thông tin của khách thuê, phòng không có số này.
+  - Mở cọc mới: các ô vẫn nạp đúng theo phòng đầu tiên đang chọn (bao
+    gồm đơn vị tính và phí xe).
+  - Sửa cọc có sẵn: lúc mở form vẫn hiển thị `serviceConfig` đã lưu của
+    cọc đó, không tự ghi đè; chỉ khi người dùng **đổi sang phòng khác**
+    mới nạp lại dịch vụ từ phòng mới.
+- **Không đổi:** không thêm dòng dịch vụ lẻ (`extra`) vào form cọc,
+  không đổi shape `serviceConfig` (dien/nuoc/xeMay/oTo/xeDap) và không
+  đổi schema backend — frontend-only. Form hợp đồng có hàm nạp tương tự
+  (`contractRoomChange`) nhưng không thuộc phạm vi đợt này.
+
+## Đợt 29 — Tạo hợp đồng cho phòng đang cọc thì lấy thông tin từ cọc
+
+**Theo yêu cầu người dùng: khi tạo hợp đồng mà phòng đó đang được cọc
+thì lấy thông tin của phòng đang cọc để làm thông tin hợp đồng.**
+Trước đây `contractRoomChange` chỉ nạp từ thông tin phòng, không đụng
+tới cọc giữ phòng, không điền khách thuê và ngày thuê.
+
+- **Điều kiện kích hoạt (chỉ khi tạo hợp đồng mới, không áp dụng khi
+  sửa hợp đồng có sẵn):** phòng đang chọn có cọc **mới nhất** theo
+  `created_at` (API trả `created_at` từ `DepositOut` — thêm mới ở đợt
+  này; thiếu `created_at` thì lấy bản ghi cuối theo thứ tự list, API
+  vốn sắp xếp theo `created_at`) **và** chưa có hợp đồng đang hoạt
+  động. Phòng không có cọc, hoặc đã có hợp đồng đang hoạt động, thì
+  giữ nguyên hành vi cũ (nạp từ thông tin phòng).
+- **Bảng map cọc → hợp đồng** (áp dụng khi đủ điều kiện trên; ô nào
+  cọc không có thì fallback như ghi chú):
+  - Khách thuê: chọn `deposit.customerId` vào select khách rồi chạy
+    đúng luồng `contractCustPick()` (hồ sơ tự điền từ hồ sơ khách;
+    ảnh CMND trong app vốn chỉ là placeholder minh họa từ đợt 5 nên
+    không có dữ liệu ảnh để điền); cọc không có `customerId` thì
+    điền thẳng `customerName`/`phone` của cọc vào các ô khách.
+  - Giá phòng ← `deposit.rentPrice`; Cọc ← `deposit.amount` (tiền giữ
+    phòng chuyển thành cọc hợp đồng); Số tháng thanh toán 1 lần ←
+    `deposit.payMonths`; từ ngày/đến ngày ← `deposit.payDayFrom`/
+    `payDayTo`.
+  - Ngày vào ← `deposit.moveInDate`; Ngày ra ← `deposit.moveOutDate`;
+    Ngày ký ← `deposit.contractDate` (ngày đến làm hợp đồng). Ô nào
+    cọc không có ngày thì về mặc định hiện tại (hôm nay / hôm
+    nay+365).
+  - Dịch vụ ← `deposit.serviceConfig` (điện giá+đơn vị, nước giá+đơn
+    vị, xe máy/ô tô/xe đạp số lượng+phí); các dịch vụ cọc không có
+    (điện chung, vệ sinh, internet) vẫn nạp từ thông tin phòng như
+    hiện tại, không để trống.
+  - Số người ở: cọc không có trường này → giữ theo phòng (maxPeople)
+    như hiện tại.
+- **Hiển thị nguồn nạp:** ghi chú dưới tiêu đề phòng đổi theo nguồn
+  — từ cọc: "Phòng này đang được cọc — thông tin hợp đồng đã tự
+  điền từ cọc giữ phòng (mới nhất)..."; từ phòng: giữ câu ghi chú cũ.
+  Người dùng vẫn sửa được mọi ô trước khi lưu (không khóa ô nào).
+- **Chống lưu nhầm khách:** khách tự điền từ cọc được đánh dấu; nếu
+  người dùng đổi sang phòng không lấy cọc thì khách đó bị xóa (tránh
+  lưu nhầm khách của phòng khác vào hợp đồng). Khách chọn tay thì
+  đổi phòng vẫn giữ nguyên.
+- **Không tự xử lý cọc sau khi lưu:** tạo hợp đồng chỉ điền thông
+  tin — bản ghi cọc giữ nguyên (không xóa, không đổi trạng thái,
+  không trừ tiền cọc). Việc xử lý cọc sau khi ký là quyết định riêng,
+  làm ở đợt khác nếu người dùng yêu cầu.
+
 ## Triển khai lên Render
 
 Project có sẵn `render.yaml` (Blueprint) và `Dockerfile` đã tương thích Render

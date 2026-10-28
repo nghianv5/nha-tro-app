@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..intrange import check_int32
 
 FILTER_PARAMS = ["houseId", "roomId", "status", "kind", "type", "month",
                  "customerId", "landlordId", "accountId", "positionId"]
@@ -75,6 +76,9 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
             data = create_mapper(data)
         if create_enrich is not None:
             create_enrich(db, data)
+        # Đợt 26: chặn số vượt int32 trước khi ghi (tránh Postgres nổ 500);
+        # chạy cho mọi router CRUD nên mọi màn cùng được hưởng.
+        check_int32(model.__name__, data)
         if before_create is not None:
             before_create(db, data)
         obj = model(**data)
@@ -89,6 +93,7 @@ def make_crud_router(model, out_schema, create_schema, update_schema, prefix,
         if not obj:
             raise HTTPException(404, "Không tìm thấy bản ghi")
         data = payload.model_dump(exclude_unset=True)
+        check_int32(model.__name__, data)
         if before_update is not None:
             before_update(db, obj, data)
         for key, value in data.items():

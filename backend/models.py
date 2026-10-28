@@ -63,6 +63,9 @@ class Room(TimestampMixin, Base):
     payMonths = Column("pay_months", Integer, default=1)
     payFromDay = Column("pay_from_day", Integer, default=1)
     payToDay = Column("pay_to_day", Integer, default=3)
+    # Đợt 26: form phòng chỉ còn 1 ô "Thời gian đóng tiền" (ngày trong tháng).
+    # 2 cột cũ giữ nguyên trong DB để không mất dữ liệu cũ, chỉ không dùng nữa.
+    payDay = Column("pay_day", Integer, default=1)
     amenities = Column(JSON, default=list)
     services = Column(JSON, default=dict)  # {dien, dienChung, internet, extra:[...]}
     images = Column(JSON, default=list)  # Đợt 16 — danh sách URL ảnh phòng tải lên (như ảnh sổ đỏ của nhà)

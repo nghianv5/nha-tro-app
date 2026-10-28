@@ -1373,15 +1373,16 @@ function viewRooms(){
     '<button class="btn gray" onclick="exportRoomsCsv()">Tải file danh sách phòng</button></div>' +
     '<p style="color:#757575;font-size:13px;margin:-4px 0 12px">Import bằng file .csv (mở được bằng Excel): chọn 1 nhà ở bộ lọc phía trên trước, rồi bấm "Thêm phòng bằng file". Giá và cọc trong file tính bằng vnđ, không phải triệu.</p>';
   var list = filteredRooms();
-  /* Đợt 5: đúng thứ tự cột của ảnh; Cọc/Giá phòng hiển thị theo TRIỆU thập phân */
-  h += tableHtml(['STT','Tên nhà','Tầng','Tên phòng','Cọc (triệu)','Giá phòng (triệu)','Diện tích (m2)','Loại phòng','Trạng thái','Chung chủ','Vệ sinh','Số phòng','Gác xép','Bếp','Số người tối đa','Dịch vụ','Sửa','Xóa'], list.map(function(r, i){
+  /* Đợt 27: Cọc/Giá phòng hiển thị theo vnđ cho nhất quán với ô nhập
+     (trước đây hiển thị theo TRIỆU thập phân từ đợt 5) */
+  h += tableHtml(['STT','Tên nhà','Tầng','Tên phòng','Cọc (vnđ)','Giá phòng (vnđ)','Diện tích (m2)','Loại phòng','Trạng thái','Chung chủ','Vệ sinh','Số phòng','Gác xép','Bếp','Số người tối đa','Dịch vụ','Sửa','Xóa'], list.map(function(r, i){
     var sv = r.services || {};
     var svNames = Object.keys(sv).filter(function(k){ return k!=='extra' && sv[k] && (sv[k].price || sv[k].fee); }).map(function(k){
       return {dien:'Điện',dienChung:'Điện chung',internet:'Internet',nuoc:'Nước',vesinh:'Vệ sinh',xeMay:'Xe máy',oTo:'Ô tô',xeDap:'Xe đạp'}[k] || k; });
     (sv.extra || []).forEach(function(x){ if(x && x.name) svNames.push(x.name); });
     return '<tr><td>'+(i+1)+'</td><td>'+esc(houseName(r.houseId))+'</td><td>'+r.floor+'</td>' +
       '<td><a onclick="go(\'roomDetail\',{id:\''+r.id+'\'})"><b>'+esc(r.name)+'</b></a></td>' +
-      '<td>'+fmtTrieu(r.minDeposit)+'</td><td class="price">'+fmtTrieu(r.price)+'</td><td>'+r.area+'</td><td>'+esc(r.type)+'</td>' +
+      '<td>'+fmt(r.minDeposit)+'</td><td class="price">'+fmt(r.price)+'</td><td>'+r.area+'</td><td>'+esc(r.type)+'</td>' +
       '<td>'+statusBadge(roomStatus(r))+'</td><td>'+(r.withOwner?'Có':'Không')+'</td><td>'+esc(r.toilet)+'</td><td>'+(r.subRooms||0)+'</td>' +
       '<td>'+((r.amenities||[]).indexOf('Gác xép')>=0?'Có':'Không')+'</td><td>'+esc(r.kitchen||'Không có')+'</td><td>'+r.maxPeople+'</td><td>'+esc(svNames.join(', '))+'</td>' +
       '<td class="act"><button class="linkbtn" onclick="go(\'roomForm\',{id:\''+r.id+'\'})">Sửa</button></td>' +
@@ -1465,7 +1466,7 @@ function importRoomsCsv(input){
         floor: num(rec.floor)||1, area: num(rec.area), type: rec.type || 'Phòng trọ',
         toilet: rec.toilet || 'Khép kín', kitchen: rec.kitchen || 'Không có', withOwner: false,
         price: num(rec.price), minDeposit: num(rec.minDeposit || rec.price), maxPeople: num(rec.maxPeople),
-        subRooms: num(rec.subRooms), payMonths: 1, payFromDay: 1, payToDay: 3, amenities: [], services: {} }));
+        subRooms: num(rec.subRooms), payMonths: 1, payDay: 1, amenities: [], services: {} }));
     }
     Promise.all(jobs).then(function(){ toast('Đã thêm ' + jobs.length + ' phòng từ file'); viewRooms(); }).catch(errToast);
     input.value = '';
@@ -1473,7 +1474,7 @@ function importRoomsCsv(input){
 }
 function svPriceOf(v, dft){ return typeof v === 'number' ? v : (v && v.price !== undefined ? v.price : dft); }
 function svUnitOf(v, dft){ return (v && typeof v === 'object' && v.unit) ? v.unit : dft; }
-/* Đợt 5 — Form phòng: Giá phòng nhập theo TRIỆU (lưu = ×1.000.000) */
+/* Đợt 27 — Form phòng: Giá phòng nhập trực tiếp theo VNĐ (không nhân triệu nữa) */
 function trieuVal(vnd){ return Math.round(((Number(vnd) || 0) / 1000000) * 100) / 100; }
 function numTrieu(v){
   var p = splitMoneyParts(v, true);
@@ -1611,11 +1612,10 @@ function viewRoomForm(p){
     fld('Vệ sinh', sel('r_toilet', ['Khép kín','Riêng','Chung'], r?r.toilet:'Khép kín')) +
     fld('Số phòng', inp('r_subrooms', r?r.subRooms:0, 'number')) +
     fld('Số người tối đa (người)', inp('r_max', r?r.maxPeople:0, 'number')) +
-    fld('Giá phòng (triệu vnđ)', inp('r_price', r ? trieuVal(r.price) : '', 'money-trieu', 'placeholder="VD: 4,5"'), true) +
+    fld('Giá phòng (vnđ)', inp('r_price', r ? r.price : '', 'money', 'placeholder="VD: 5.700.000"'), true) +
     fld('Cọc tối thiểu (vnđ)', inp('r_minDep', r?r.minDeposit:0, 'money')) +
     fld('Số tháng thanh toán 1 lần', inp('r_payMonths', r?r.payMonths:1, 'number')) +
-    fld('Thanh toán từ ngày', inp('r_from', r?r.payFromDay:1, 'number')) +
-    fld('đến ngày', inp('r_to', r?r.payToDay:3, 'number')) +
+    fld('Thời gian đóng tiền', inp('r_payday', r ? (r.payDay || r.payFromDay || 1) : 1, 'number')) +
     '</div>' +
     '<h3 class="sec">Dịch Vụ</h3><div id="r_sv_list"></div>' +
     '<div class="fgrid" style="margin-top:10px;align-items:end">' +
@@ -1648,6 +1648,9 @@ function viewRoomForm(p){
 }
 function saveRoom(id){
   if(!lockSave('room')) return;  // Đợt 25: bấm Lưu liên tục chỉ chạy 1 lần lưu
+  /* Đợt 27: giá phòng nhập trực tiếp bằng vnđ (không còn ô triệu) nên
+     không còn cảnh báo nhầm đơn vị triệu ở đây; số vượt int32 thì
+     backend chặn bằng 400 (xem backend/intrange.py). */
   var old = id ? byId(db.rooms, id) : null;
   var amenities = AMENITIES.filter(function(a){ return isChk('r_am_'+a); });
   // Giữ lại tiện ích ngoài danh sách 14 của thiết kế (vd 'Tivi' từ dữ liệu cũ)
@@ -1664,9 +1667,9 @@ function saveRoom(id){
   });
   var data = { houseId: val('r_house'), name: val('r_name'), floor: num(val('r_floor')),
     area: num(val('r_area')), type: val('r_type'), toilet: val('r_toilet'), kitchen: val('r_kitchen'),
-    withOwner: isChk('r_withOwner'), price: numTrieu(val('r_price')), minDeposit: num(val('r_minDep')),
+    withOwner: isChk('r_withOwner'), price: num(val('r_price')), minDeposit: num(val('r_minDep')),
     maxPeople: num(val('r_max')), subRooms: num(val('r_subrooms')), payMonths: num(val('r_payMonths'))||1,
-    payFromDay: num(val('r_from'))||1, payToDay: num(val('r_to'))||3, amenities: amenities,
+    payDay: Math.min(31, Math.max(1, num(val('r_payday'))||1)), amenities: amenities,
     services: services,
     /* Đợt 16: danh sách URL ảnh phòng đã tải lên */
     images: (window._rmImages || []).slice() };
@@ -1703,6 +1706,7 @@ function viewRoomDetail(p){
   h += '<div class="card">' +
     '<div class="kv"><span>Trạng thái</span><span>'+statusBadge(roomStatus(r))+'</span></div>' +
     '<div class="kv"><span>Giá phòng / Cọc tối thiểu</span><span>'+fmt(r.price)+' / '+fmt(r.minDeposit)+'</span></div>' +
+    '<div class="kv"><span>Thời gian đóng tiền</span><span>Ngày '+(r.payDay || r.payFromDay || 1)+'</span></div>' +
     '<div class="kv"><span>Tầng / Diện tích / Loại</span><span>'+r.floor+' / '+r.area+' m2 / '+esc(r.type)+'</span></div>' +
     '<div class="kv"><span>Số phòng (phòng con) / Số người tối đa</span><span>'+(r.subRooms||0)+' / '+(r.maxPeople||0)+'</span></div>' +
     '<div class="kv"><span>Vệ sinh / Bếp / Chung chủ</span><span>'+esc(r.toilet)+' / '+esc(r.kitchen||'Không có')+' / '+(r.withOwner?'Có':'Không')+'</span></div>' +
@@ -1785,19 +1789,39 @@ function depHouseChange(){
   sel.innerHTML = depRoomOptions(val('dp_house'), '');
   depFillFromRoom(true);
 }
+/* Đợt mới: phần Dịch vụ của form cọc nạp tự động từ phòng đang chọn —
+   giá + cách tính điện/nước và phí xe đều theo phòng; số lượng xe là
+   thông tin của khách thuê nên giữ nguyên khi đổi phòng, không nạp lại. */
 function depFillFromRoom(force){
   var room = byId(db.rooms, val('dp_room')); if(!room) return;
   var sv = room.services || {};
   function set(id, v){ var e = document.getElementById(id); if(e && (force || e.value === '' || e.value === '0')){ e.value = v; if(e.classList.contains('money')) moneyFmt(e); } }
+  /* Select đơn vị: gán .value trực tiếp (không qua moneyFmt); nếu phòng
+     lưu đơn vị không có trong select thì về mặc định. */
+  function setSel(id, v, dft){ var e = document.getElementById(id); if(!e || !(force || !e.value)) return;
+    var has = false; for(var i = 0; i < e.options.length; i++) if(e.options[i].value === v) has = true;
+    e.value = has ? v : dft; }
+  /* Phí xe của phòng: ưu tiên fee (dạng {count, fee}), rồi price/số trần
+     (dạng {price} hoặc số), cuối cùng là mặc định. */
+  function svFee(k, dft){ var row = sv[k]; if(!row) return dft;
+    if(typeof row === 'object' && row.fee !== undefined) return row.fee;
+    return svPriceOf(row, dft); }
   set('dp_rent', room.price || 0);
   set('dp_price', room.price || 0);
   set('dp_mindep', room.minDeposit || 0);
   set('dp_max', room.maxPeople || 0);
   set('dp_paymonths', room.payMonths || 1);
-  set('dp_from', room.payFromDay || 1);
-  set('dp_to', room.payToDay || 3);
+  set('dp_from', room.payDay || room.payFromDay || 1);
+  set('dp_to', room.payDay || room.payToDay || 3);
   set('dp_sv_dien', svPriceOf(sv.dien, 3000));
+  setSel('dp_sv_dien_unit', svUnitOf(sv.dien, 'so'), 'so');
   set('dp_sv_nuoc', svPriceOf(sv.nuoc, 80000));
+  setSel('dp_sv_nuoc_unit', svUnitOf(sv.nuoc, 'nguoi'), 'nguoi');
+  set('dp_xm_f', svFee('xeMay', 30000));
+  set('dp_ot_f', svFee('oTo', 100000));
+  set('dp_xd_f', svFee('xeDap', 10000));
+  /* Số lượng xe (dp_xm_n/dp_ot_n/dp_xd_n) cố tình không chạm tới: đó là
+     thông tin của khách thuê, phòng không có số này. */
   var hs = document.getElementById('dp_house'); if(hs) hs.value = room.houseId;
   var tt = document.getElementById('dp_room_title'); if(tt) tt.textContent = 'Phòng ' + room.name;
 }
@@ -1932,7 +1956,10 @@ function viewContracts(){
   }).join(''), 'Chưa có hợp đồng nào');
   setContent(h);
 }
-function contractCustPick(){
+function contractCustPick(manual){
+  /* Đợt 29: chọn tay thì khách không còn là "từ cọc" nữa — đổi phòng sau đó
+     không được xóa lựa chọn tay này (chỉ xóa khách tự điền từ cọc). */
+  if(manual) window._ctCustFromDep = false;
   var c = byId(db.customers, val('c_custSel'));
   var map = { name:'cu_name', dob:'cu_dob', permanentAddress:'cu_perm', phone:'cu_phone', gender:'cu_gender',
     job:'cu_job', maritalStatus:'cu_marital', email:'cu_email', idCard:'cu_idcard', currentAddress:'cu_curr', note:'cu_note' };
@@ -1950,21 +1977,93 @@ function contractHouseChange(){
   sel.innerHTML = contractRoomOptions(val('c_house'), '');
   contractRoomChange();
 }
+/* Đợt 29: cọc mới nhất của phòng theo created_at (API trả created_at từ
+   DepositOut). Thiếu created_at thì lấy bản ghi cuối theo thứ tự list
+   (API sắp xếp theo created_at) — bằng nhau thì bản ghi sau thắng. */
+function latestDepositOfRoom(roomId){
+  var best = null;
+  db.deposits.forEach(function(x){
+    if(x.roomId !== roomId) return;
+    if(!best){ best = x; return; }
+    var a = String(x.created_at || ''), b = String(best.created_at || '');
+    if(a >= b) best = x;
+  });
+  return best;
+}
 function contractRoomChange(){
   var room = byId(db.rooms, val('c_room')); if(!room) return;
   var sv = room.services || {};
   function set(id, v){ var e = document.getElementById(id); if(e){ e.value = v; if(e.classList.contains('money')) moneyFmt(e); } }
+  /* 1. Nạp từ thông tin phòng (hành vi hiện tại; xe cộ mirror đúng fallback
+     lúc render form mới để đổi phòng không kẹt giá trị phòng cũ). */
   set('c_price', room.price || 0);
   set('c_deposit', room.minDeposit || 0);
   set('c_people', room.maxPeople || 1);
   set('c_payMonths', room.payMonths || 1);
-  set('c_from', room.payFromDay || 1);
-  set('c_to', room.payToDay || 3);
+  set('c_from', room.payDay || room.payFromDay || 1);
+  set('c_to', room.payDay || room.payToDay || 3);
   set('c_dien', svPriceOf(sv.dien, 3000)); set('c_dien_unit', svUnitOf(sv.dien, 'so'));
   set('c_nuoc', svPriceOf(sv.nuoc, 80000)); set('c_nuoc_unit', svUnitOf(sv.nuoc, 'nguoi'));
   set('c_dc', svPriceOf(sv.dienChung, 30000));
   set('c_vs', svPriceOf(sv.vesinh, 20000));
   set('c_net', svPriceOf(sv.internet, 50000));
+  set('c_xm_n', (sv.xeMay||{}).count !== undefined ? sv.xeMay.count : 1);
+  set('c_xm_f', (sv.xeMay||{}).fee !== undefined ? sv.xeMay.fee : 30000);
+  set('c_ot_n', (sv.oTo||{}).count || 0);
+  set('c_ot_f', (sv.oTo||{}).fee !== undefined ? sv.oTo.fee : 100000);
+  set('c_xd_n', (sv.xeDap||{}).count || 0);
+  set('c_xd_f', (sv.xeDap||{}).fee !== undefined ? sv.xeDap.fee : 10000);
+  /* 2. Đợt 29: chỉ khi TẠO hợp đồng mới và phòng đang được cọc (có cọc mà
+     chưa có HĐ đang hoạt động) thì nạp đè từ cọc mới nhất thay vì từ phòng.
+     Sửa hợp đồng có sẵn thì không đụng tới cọc. */
+  var dep = null;
+  if(window._ctIsNew){
+    dep = latestDepositOfRoom(room.id);
+    if(dep && activeContract(room.id)) dep = null;
+  }
+  var note = document.getElementById('c_fill_note');
+  if(dep){
+    var sc = dep.serviceConfig || {};
+    if(dep.rentPrice) set('c_price', dep.rentPrice);
+    if(dep.amount) set('c_deposit', dep.amount);
+    if(dep.payMonths) set('c_payMonths', dep.payMonths);
+    if(dep.payDayFrom) set('c_from', dep.payDayFrom);
+    if(dep.payDayTo) set('c_to', dep.payDayTo);
+    if(sc.dien){ set('c_dien', svPriceOf(sc.dien, 3000)); set('c_dien_unit', svUnitOf(sc.dien, 'so')); }
+    if(sc.nuoc){ set('c_nuoc', svPriceOf(sc.nuoc, 80000)); set('c_nuoc_unit', svUnitOf(sc.nuoc, 'nguoi')); }
+    if(sc.xeMay){ if(sc.xeMay.count !== undefined) set('c_xm_n', sc.xeMay.count); if(sc.xeMay.fee !== undefined) set('c_xm_f', sc.xeMay.fee); }
+    if(sc.oTo){ if(sc.oTo.count !== undefined) set('c_ot_n', sc.oTo.count); if(sc.oTo.fee !== undefined) set('c_ot_f', sc.oTo.fee); }
+    if(sc.xeDap){ if(sc.xeDap.count !== undefined) set('c_xd_n', sc.xeDap.count); if(sc.xeDap.fee !== undefined) set('c_xd_f', sc.xeDap.fee); }
+    /* Ngày: cọc có ngày thì lấy, không có thì về mặc định hiện tại. */
+    set('c_start', dep.moveInDate || today());
+    set('c_end', dep.moveOutDate || addDays(today(), 365));
+    set('c_sign', dep.contractDate || today());
+    /* Khách: có customerId thì chọn khách đó rồi chạy đúng luồng
+       contractCustPick(); không có thì điền thẳng tên/SĐT của cọc. */
+    var csel = document.getElementById('c_custSel');
+    if(dep.customerId && byId(db.customers, dep.customerId)){
+      if(csel) csel.value = dep.customerId;
+      contractCustPick();
+    } else {
+      if(csel) csel.value = '';
+      contractCustPick();
+      set('cu_name', dep.customerName || '');
+      set('cu_phone', dep.phone || '');
+    }
+    window._ctCustFromDep = true;
+    if(note) note.textContent = 'Phòng này đang được cọc — thông tin hợp đồng đã tự điền từ cọc giữ phòng (mới nhất). Có thể chỉnh lại trước khi lưu.';
+  } else {
+    /* Đợt 29: khách đang hiển thị mà là khách tự điền từ cọc của phòng trước
+       thì xóa đi — tránh lưu nhầm khách của phòng khác vào hợp đồng này.
+       Khách chọn tay thì giữ nguyên (hành vi hiện tại). */
+    if(window._ctCustFromDep){
+      var cs2 = document.getElementById('c_custSel');
+      if(cs2) cs2.value = '';
+      contractCustPick();
+      window._ctCustFromDep = false;
+    }
+    if(note) note.textContent = 'Giá phòng, cọc, số người và dịch vụ tự điền từ thông tin phòng — có thể chỉnh lại trước khi lưu.';
+  }
   var hs = document.getElementById('c_house'); if(hs) hs.value = room.houseId;
   var tt = document.getElementById('c_room_title'); if(tt) tt.textContent = 'Phòng ' + room.name;
 }
@@ -1984,7 +2083,7 @@ function viewContractForm(p){
     fld('Phòng', '<select id="c_room" onchange="contractRoomChange()">' + contractRoomOptions(room ? room.houseId : '', room ? room.id : '') + '</select>', true) +
     '</div>' +
     '<h3 class="sec" id="c_room_title">Phòng ' + esc(room ? room.name : '') + '</h3>' +
-    '<p style="color:#616161;margin-bottom:6px">Giá phòng, cọc, số người và dịch vụ tự điền từ thông tin phòng — có thể chỉnh lại trước khi lưu.</p>' +
+    '<p id="c_fill_note" style="color:#616161;margin-bottom:6px">Giá phòng, cọc, số người và dịch vụ tự điền từ thông tin phòng — có thể chỉnh lại trước khi lưu.</p>' +
     '<div class="fgrid">' +
     fld('Giá phòng (vnđ)', inp('c_price', ct?ct.price:(room?room.price:0), 'money'), true) +
     fld('Cọc (vnđ)', inp('c_deposit', ct?ct.deposit:(room?room.minDeposit:0), 'money')) +
@@ -2007,10 +2106,10 @@ function viewContractForm(p){
     fld('Ngày ra (đến)', inp('c_end', ct?ct.endDate:addDays(today(), 365), 'date'), true) +
     fld('Ngày ký hợp đồng', inp('c_sign', ct?ct.signDate:today(), 'date')) +
     fld('Số tháng thanh toán 1 lần', inp('c_payMonths', ct?ct.payMonths:(room?room.payMonths:1), 'number')) +
-    fld('Thời gian thanh toán từ ngày', inp('c_from', ct?ct.payFromDay:(room?room.payFromDay:1), 'number')) +
-    fld('đến ngày', inp('c_to', ct?ct.payToDay:(room?room.payToDay:3), 'number')) + '</div></div>' +
+    fld('Thời gian thanh toán từ ngày', inp('c_from', ct?ct.payFromDay:(room?(room.payDay || room.payFromDay):1), 'number')) +
+    fld('đến ngày', inp('c_to', ct?ct.payToDay:(room?(room.payDay || room.payToDay):3), 'number')) + '</div></div>' +
     '<div class="form-sec"><h3 class="sec">Khách hàng</h3>' +
-    fld('Chọn khách có sẵn (chọn là tự điền hồ sơ, sửa được; để trống = nhập khách mới)', '<select id="c_custSel" onchange="contractCustPick()">' +
+    fld('Chọn khách có sẵn (chọn là tự điền hồ sơ, sửa được; để trống = nhập khách mới)', '<select id="c_custSel" onchange="contractCustPick(true)">' +
       '<option value="">-- Nhập khách mới --</option>' + db.customers.map(function(x){
         return '<option value="'+x.id+'"'+(cust && cust.id===x.id ? ' selected' : '')+'>'+esc(x.name + ' — ' + (x.phone||''))+'</option>'; }).join('') + '</select>') +
     custFieldsHtml('cu', cust || {}) +
@@ -2018,6 +2117,11 @@ function viewContractForm(p){
     '<div class="btnrow"><button class="btn green" type="submit">'+(ct ? 'Lưu thay đổi' : 'Thêm hợp đồng')+'</button>' +
     '<button class="btn gray" type="button" onclick="go(\'contracts\')">Quay lại</button></div></form>';
   setContent(h);
+  /* Đợt 29: tạo mới thì chạy luôn luồng nạp theo phòng/cọc để phòng đang
+     được cọc được điền từ cọc ngay khi mở form (sửa thì không). */
+  window._ctIsNew = !ct;
+  window._ctCustFromDep = false;
+  if(!ct) contractRoomChange();
 }
 function saveContract(id){
   var room = byId(db.rooms, val('c_room'));
